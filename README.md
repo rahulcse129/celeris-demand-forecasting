@@ -23,19 +23,17 @@
 
 ## 📸 3D Isometric System Architecture
 
-<div align="center">
-  <img src="dashboard/assets/celeris_3d_architecture.jpg" width="100%" alt="Celeris 3D Isometric Architecture Diagram" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);" />
-  <p><i>Figure 1: High-Tech 3D Multi-Layered Isometric Platform of the Celeris Planning Control Tower.</i></p>
-</div>
+![Celeris 3D Isometric Architecture](./assets/celeris_3d_architecture.jpg)
 
-<details>
-<summary><b>📐 View High-Resolution Vector Schematic (SVG Architecture)</b></summary>
-<br/>
-<div align="center">
-  <img src="dashboard/assets/architecture_3d_isometric.svg" width="100%" alt="3D Isometric Architecture Schematic" />
-  <p><i>Figure 2: Component-Level Vector Isometric Flow Diagram.</i></p>
-</div>
-</details>
+<p align="center"><i>Figure 1: High-Tech 3D Multi-Layered Isometric Platform of the Celeris Planning Control Tower.</i></p>
+
+---
+
+### 📐 High-Resolution Vector Schematic (3D Architecture Flow)
+
+![3D Isometric Architecture Schematic](./assets/architecture_3d_isometric.svg)
+
+<p align="center"><i>Figure 2: Component-Level Vector Isometric Flow Diagram across all 5 Platform Tiers.</i></p>
 
 ---
 
