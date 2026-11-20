@@ -1,0 +1,31 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+venv/
+env/
+.ipynb_checkpoints/
+catboost_info/
+
+# Raw and huge files (>50MB)
+dataset/
+*.zip
+*.pdf
+data/features/train_features.csv
+data/cleaned/train_clean.csv
+data/features/test_features.csv
+
+# Keep parquet compressed versions
+!data/cleaned/train_clean.parquet
+!data/features/test_features.parquet
+!data/cleaned/*.csv
+!data/forecasts/*
+!reports/*
+!dashboard/*
+!src/*
+!notebooks/*
+!submission.csv
+!README.md
+!requirements.txt

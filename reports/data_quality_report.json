@@ -1,0 +1,214 @@
+{
+  "pipeline_run": "2026-11-21T01:14:36.932416",
+  "files": {
+    "train_raw": {
+      "raw_rows": 248248,
+      "raw_columns": [
+        "Record_ID",
+        "Date",
+        "Year",
+        "Month",
+        "Product_Family",
+        "Business_Unit",
+        "SKU_ID",
+        "SKU_Description",
+        "Customer_Name",
+        "Sales_Channel",
+        "Region",
+        "Units_Sold",
+        "Unit_Price_USD",
+        "Revenue_USD",
+        "Load_Timestamp"
+      ],
+      "null_counts": {
+        "Record_ID": 0,
+        "Date": 0,
+        "Year": 0,
+        "Month": 0,
+        "Product_Family": 1252,
+        "Business_Unit": 0,
+        "SKU_ID": 0,
+        "SKU_Description": 996,
+        "Customer_Name": 0,
+        "Sales_Channel": 0,
+        "Region": 952,
+        "Units_Sold": 3362,
+        "Unit_Price_USD": 0,
+        "Revenue_USD": 383,
+        "Load_Timestamp": 0
+      },
+      "blank_counts": {
+        "Record_ID": 0,
+        "Date": 0,
+        "Year": 0,
+        "Month": 0,
+        "Product_Family": 1252,
+        "Business_Unit": 0,
+        "SKU_ID": 0,
+        "SKU_Description": 996,
+        "Customer_Name": 0,
+        "Sales_Channel": 0,
+        "Region": 952,
+        "Units_Sold": 3362,
+        "Unit_Price_USD": 0,
+        "Revenue_USD": 383,
+        "Load_Timestamp": 0
+      },
+      "unique_counts": {
+        "Record_ID": 244566,
+        "Date": 667,
+        "Year": 8,
+        "Month": 12,
+        "Product_Family": 7,
+        "Business_Unit": 5,
+        "SKU_ID": 2659,
+        "SKU_Description": 598,
+        "Customer_Name": 220,
+        "Sales_Channel": 17,
+        "Region": 29,
+        "Units_Sold": 907,
+        "Unit_Price_USD": 5633,
+        "Revenue_USD": 154737,
+        "Load_Timestamp": 239221
+      }
+    },
+    "macro_indicators": {
+      "rows": 114,
+      "null_values_found": 5,
+      "date_range": "2019-01 to 2028-05",
+      "action": "Interpolated missing values"
+    },
+    "train_cleaned": {
+      "clean_rows": 243624,
+      "unique_dates": 94,
+      "date_range": "2019-01 to 2026-10",
+      "unique_skus": 2657,
+      "unique_regions": 6,
+      "regions": [
+        "Asia Pacific",
+        "Europe",
+        "India",
+        "Latin America",
+        "Middle East & Africa",
+        "North America"
+      ],
+      "unique_customers": 12,
+      "unique_channels": 4,
+      "unique_families": 7,
+      "families": [
+        "Brake & Safety Systems",
+        "Chassis & Structural",
+        "Electrical Assemblies",
+        "Hydraulic Systems",
+        "Powertrain Components",
+        "Precision Machined Parts",
+        "Thermal Management"
+      ]
+    },
+    "test_cleaned": {
+      "clean_rows": 58219,
+      "unique_dates": 19,
+      "date_range": "2026-11 to 2028-05"
+    }
+  },
+  "summary": {
+    "total_issues_found": 13,
+    "total_rows_raw": 248248,
+    "total_rows_clean": 243624,
+    "rows_removed": 4624,
+    "cleaning_pipeline": "src/clean.py",
+    "output_directory": "F:\\Project\\IMS-KS\\data\\cleaned"
+  },
+  "issues": [
+    {
+      "type": "date_format_inconsistency",
+      "rows_affected": 9967,
+      "action": "Parsed all dates to YYYY-MM format"
+    },
+    {
+      "type": "future_dates_fixed",
+      "rows_affected": 30,
+      "action": "Fixed year 2062\u21922026 (digit swap); dropped any remaining future dates"
+    },
+    {
+      "type": "region_inconsistency",
+      "variants_before": 29,
+      "variants_after": 6,
+      "blank_regions": 952,
+      "action": "Mapped 29 variants to 6 clean regions"
+    },
+    {
+      "type": "channel_inconsistency",
+      "variants_before": 17,
+      "variants_after": 4,
+      "action": "Mapped 17 variants to 4 clean channels"
+    },
+    {
+      "type": "customer_name_typos",
+      "variants_before": 220,
+      "variants_after": 12,
+      "action": "Fuzzy-matched 220 variants to 12 clean names"
+    },
+    {
+      "type": "blank_product_family",
+      "rows_affected": 1252,
+      "action": "Inferred from SKU_ID prefix"
+    },
+    {
+      "type": "numeric_conversion_errors",
+      "rows_affected": 3624,
+      "action": "Coerced to numeric; NaN where unparseable"
+    },
+    {
+      "type": "duplicate_record_ids",
+      "rows_removed": 3682,
+      "rows_before": 248248,
+      "rows_after": 244566,
+      "action": "Kept row with latest Load_Timestamp per Record_ID"
+    },
+    {
+      "type": "revenue_mismatch",
+      "rows_affected": 1678,
+      "unit_errors_x10": 36110,
+      "unit_errors_x100": 35685,
+      "unit_errors_x1000": 35685,
+      "action": "Fixed unit scaling errors; recomputed Revenue = Units * Price"
+    },
+    {
+      "type": "sku_validation",
+      "train_unique_skus": 2659,
+      "master_skus": 601,
+      "in_train_not_master": 2061,
+      "in_master_not_train": 3,
+      "sample_not_in_master": [
+        " BSS-001",
+        " BSS-002",
+        " BSS-003",
+        " BSS-004",
+        " BSS-005",
+        " BSS-006",
+        " BSS-007",
+        " BSS-008",
+        " BSS-009",
+        " BSS-011"
+      ],
+      "action": "Flagged SKUs not in master for investigation"
+    },
+    {
+      "type": "invalid_region_removed",
+      "rows_removed": 942,
+      "action": "Removed rows where Region could not be mapped to a clean value"
+    },
+    {
+      "type": "aggregation",
+      "rows_before": 243624,
+      "rows_after": 243624,
+      "action": "Aggregated to one row per Date-SKU-Region (summed Units_Sold and Revenue)"
+    },
+    {
+      "type": "unconstrained_demand",
+      "rows_corrected": 4896,
+      "action": "Used Requested_Units from stockout data as true demand where available"
+    }
+  ]
+}

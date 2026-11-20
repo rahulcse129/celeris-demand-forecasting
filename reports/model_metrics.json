@@ -1,0 +1,52 @@
+{
+  "baselines": {
+    "seasonal_naive": {
+      "wape": 0.4163,
+      "bias": 0.019
+    },
+    "moving_average_6m": {
+      "wape": 0.5369,
+      "bias": -0.0311
+    }
+  },
+  "individual_models": {
+    "lightgbm": {
+      "wape": 0.3157,
+      "bias": 0.0102,
+      "mae": 14.7
+    },
+    "catboost": {
+      "wape": 0.3,
+      "bias": -0.0432
+    }
+  },
+  "blended_ensemble": {
+    "wape": 0.3058,
+    "bias": -0.013,
+    "mae": 14.24,
+    "blend_weights": {
+      "lightgbm": 0.55,
+      "catboost": 0.45
+    },
+    "num_features": 75
+  },
+  "test_forecast_summary": {
+    "rows": 58219,
+    "total_units": 2657218,
+    "mean": 45.6,
+    "median": 38.0,
+    "std": 34.4,
+    "min": 0,
+    "max": 494
+  },
+  "lightgbm": {
+    "wape": 0.3058,
+    "bias": -0.013,
+    "mae": 14.24,
+    "blend_weights": {
+      "lightgbm": 0.55,
+      "catboost": 0.45
+    },
+    "num_features": 75
+  }
+}
