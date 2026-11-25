@@ -1,5 +1,9 @@
 # Celeris Automobili — Demand Forecasting & Planning Control Tower
 
+**Submission for the [MKS AI/ML Hackathon – Phase 2](https://www.hackerearth.com/community/challenges/hackathon/mks-aiml-hackathon/)**,
+hosted by MKS Inc. on HackerEarth (20–29 Nov 2026) · Theme: *Demand Forecasting & Planning Control Tower* ·
+Individual entry by **Rahul Pal ([@rahulcse129](https://github.com/rahulcse129))**
+
 Unconstrained monthly demand forecasts for **3,068 SKU × region series** (Nov 2026 → May 2028, 19 months),
 built from a messy ERP extract, with an 11-view Streamlit control tower for planners and managers.
 
@@ -27,6 +31,26 @@ built from a messy ERP extract, with an 11-view Streamlit control tower for plan
 ![3D pipeline flow: raw data, clean.py, features.py, anomalies.py, models.py with a rolling-origin backtest loop, then submission and dashboard](assets/pipeline_flow_3d.svg)
 
 *Both diagrams are drawn by `src/generate_diagrams.py` from the pipeline's own reports, so their numbers always match the latest run.*
+
+## MKS hackathon brief → where it is delivered
+
+The theme asks for three deliverables: **data cleaning and anomaly detection**, **predictive demand forecasting**,
+and an **interactive dashboard with historical trends, forecasts and actionable business insights**.
+Every Core requirement is met, plus every Advanced and Expert item in the problem statement:
+
+| Workstream | Core | Advanced | Expert |
+|---|---|---|---|
+| **1. Cleaning** | ✅ profiling, labels, dates, de-dup, one row per Date-SKU-Region — `src/clean.py` | ✅ units × price = revenue, unit/currency fixes, missing rows ≠ zeros, macro cleaned | ✅ one-command pipeline with 15 tests; machine-readable `data_quality_report.json` + row-level log |
+| **2. Anomalies** | ✅ register separating errors from real events — `reports/anomaly_register.csv` | ✅ structural breaks, pre-buy before price rises, holidays, stockouts → unconstrained demand | ✅ ordering-cycle changes, customer switches, lost accounts checked, master data vs transactions |
+| **3. Features & drivers** | ✅ calendar, seasonal/phase lags, rolling stats, intermittency class | ✅ which indicator leads which family and at what lag; event + lifecycle features | ✅ lag stability over time (it shifts from 0–1 to 3–5 months); EV transition |
+| **4. Forecasting** | ✅ 2 baselines + better model, time-based backtest | ✅ Croston-SBA, global LightGBM, rolling-origin backtest at 19 months | ✅ launches via `Replaces_SKU`, EOL, events in the window, P10/P50/P90, coherent hierarchy |
+| **5. Dashboard** | ✅ all 5 required views | ✅ + optional views | ✅ + 6 optional views, **deployed** ([live demo](https://celeris-demand-forecasting-mks-ai.streamlit.app/)) |
+
+**Built for the MKS technology focus:** machine learning (direct multi-horizon LightGBM with quantiles),
+data analytics (driver and anomaly analysis), data visualisation and dashboard development (the control tower).
+The approach transfers to any manufacturer that plans supply from noisy order history, including the
+semiconductor-equipment and industrial supply chains MKS serves: constrained shipments reconstructed into true
+demand, lifecycle transitions and P90-based procurement buffers.
 
 ---
 
@@ -167,3 +191,7 @@ forecast marked, plus shipped vs unconstrained demand and the P10–P90 band.
 - P10–P90 coverage is 75% against an 80% target, so the intervals are slightly narrow at SKU level.
   Summing SKU P90s overstates the aggregate P90.
 - The macro effects are what the model learned from 2019–2026 data. They are not causal guarantees.
+
+---
+
+<p align="center"><sub>Built for the <b>MKS AI/ML Hackathon – Phase 2</b> (MKS Inc. × HackerEarth, 2026). Data and company names in the problem are synthetic and fictional. Code © Rahul Pal (rahulcse129).</sub></p>
