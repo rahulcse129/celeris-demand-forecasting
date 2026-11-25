@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1300" width="1500" height="1300">
+<defs>
+  <radialGradient id="bg" cx="55%" cy="45%" r="75%">
+    <stop offset="0%" stop-color="#14203a"/><stop offset="65%" stop-color="#0a1020"/><stop offset="100%" stop-color="#05080f"/>
+  </radialGradient>
+  <filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1500" height="1300">
+    <feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+    <feDropShadow dx="0" dy="14" stdDeviation="12" flood-color="#000" flood-opacity="0.6"/>
+  </filter>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#ffb347"/>
+  </marker>
+</defs>
+<rect width="1500" height="1300" fill="url(#bg)"/>
+<g opacity="0.07" stroke="#7aa2d6"><line x1="0" y1="0" x2="-2251.6" y2="1300"/><line x1="-2251.6" y1="0" x2="0" y2="1300"/><line x1="60" y1="0" x2="-2191.6" y2="1300"/><line x1="-2191.6" y1="0" x2="60" y2="1300"/><line x1="120" y1="0" x2="-2131.6" y2="1300"/><line x1="-2131.6" y1="0" x2="120" y2="1300"/><line x1="180" y1="0" x2="-2071.6" y2="1300"/><line x1="-2071.6" y1="0" x2="180" y2="1300"/><line x1="240" y1="0" x2="-2011.6" y2="1300"/><line x1="-2011.6" y1="0" x2="240" y2="1300"/><line x1="300" y1="0" x2="-1951.6" y2="1300"/><line x1="-1951.6" y1="0" x2="300" y2="1300"/><line x1="360" y1="0" x2="-1891.6" y2="1300"/><line x1="-1891.6" y1="0" x2="360" y2="1300"/><line x1="420" y1="0" x2="-1831.6" y2="1300"/><line x1="-1831.6" y1="0" x2="420" y2="1300"/><line x1="480" y1="0" x2="-1771.6" y2="1300"/><line x1="-1771.6" y1="0" x2="480" y2="1300"/><line x1="540" y1="0" x2="-1711.6" y2="1300"/><line x1="-1711.6" y1="0" x2="540" y2="1300"/><line x1="600" y1="0" x2="-1651.6" y2="1300"/><line x1="-1651.6" y1="0" x2="600" y2="1300"/><line x1="660" y1="0" x2="-1591.6" y2="1300"/><line x1="-1591.6" y1="0" x2="660" y2="1300"/><line x1="720" y1="0" x2="-1531.6" y2="1300"/><line x1="-1531.6" y1="0" x2="720" y2="1300"/><line x1="780" y1="0" x2="-1471.6" y2="1300"/><line x1="-1471.6" y1="0" x2="780" y2="1300"/><line x1="840" y1="0" x2="-1411.6" y2="1300"/><line x1="-1411.6" y1="0" x2="840" y2="1300"/><line x1="900" y1="0" x2="-1351.6" y2="1300"/><line x1="-1351.6" y1="0" x2="900" y2="1300"/><line x1="960" y1="0" x2="-1291.6" y2="1300"/><line x1="-1291.6" y1="0" x2="960" y2="1300"/><line x1="1020" y1="0" x2="-1231.6" y2="1300"/><line x1="-1231.6" y1="0" x2="1020" y2="1300"/><line x1="1080" y1="0" x2="-1171.6" y2="1300"/><line x1="-1171.6" y1="0" x2="1080" y2="1300"/><line x1="1140" y1="0" x2="-1111.6" y2="1300"/><line x1="-1111.6" y1="0" x2="1140" y2="1300"/><line x1="1200" y1="0" x2="-1051.6" y2="1300"/><line x1="-1051.6" y1="0" x2="1200" y2="1300"/><line x1="1260" y1="0" x2="-991.5999999999999" y2="1300"/><line x1="-991.5999999999999" y1="0" x2="1260" y2="1300"/><line x1="1320" y1="0" x2="-931.5999999999999" y2="1300"/><line x1="-931.5999999999999" y1="0" x2="1320" y2="1300"/><line x1="1380" y1="0" x2="-871.5999999999999" y2="1300"/><line x1="-871.5999999999999" y1="0" x2="1380" y2="1300"/><line x1="1440" y1="0" x2="-811.5999999999999" y2="1300"/><line x1="-811.5999999999999" y1="0" x2="1440" y2="1300"/><line x1="1500" y1="0" x2="-751.5999999999999" y2="1300"/><line x1="-751.5999999999999" y1="0" x2="1500" y2="1300"/><line x1="1560" y1="0" x2="-691.5999999999999" y2="1300"/><line x1="-691.5999999999999" y1="0" x2="1560" y2="1300"/><line x1="1620" y1="0" x2="-631.5999999999999" y2="1300"/><line x1="-631.5999999999999" y1="0" x2="1620" y2="1300"/><line x1="1680" y1="0" x2="-571.5999999999999" y2="1300"/><line x1="-571.5999999999999" y1="0" x2="1680" y2="1300"/><line x1="1740" y1="0" x2="-511.5999999999999" y2="1300"/><line x1="-511.5999999999999" y1="0" x2="1740" y2="1300"/><line x1="1800" y1="0" x2="-451.5999999999999" y2="1300"/><line x1="-451.5999999999999" y1="0" x2="1800" y2="1300"/><line x1="1860" y1="0" x2="-391.5999999999999" y2="1300"/><line x1="-391.5999999999999" y1="0" x2="1860" y2="1300"/><line x1="1920" y1="0" x2="-331.5999999999999" y2="1300"/><line x1="-331.5999999999999" y1="0" x2="1920" y2="1300"/><line x1="1980" y1="0" x2="-271.5999999999999" y2="1300"/><line x1="-271.5999999999999" y1="0" x2="1980" y2="1300"/><line x1="2040" y1="0" x2="-211.5999999999999" y2="1300"/><line x1="-211.5999999999999" y1="0" x2="2040" y2="1300"/><line x1="2100" y1="0" x2="-151.5999999999999" y2="1300"/><line x1="-151.5999999999999" y1="0" x2="2100" y2="1300"/><line x1="2160" y1="0" x2="-91.59999999999991" y2="1300"/><line x1="-91.59999999999991" y1="0" x2="2160" y2="1300"/><line x1="2220" y1="0" x2="-31.59999999999991" y2="1300"/><line x1="-31.59999999999991" y1="0" x2="2220" y2="1300"/><line x1="2280" y1="0" x2="28.40000000000009" y2="1300"/><line x1="28.40000000000009" y1="0" x2="2280" y2="1300"/><line x1="2340" y1="0" x2="88.40000000000009" y2="1300"/><line x1="88.40000000000009" y1="0" x2="2340" y2="1300"/><line x1="2400" y1="0" x2="148.4000000000001" y2="1300"/><line x1="148.4000000000001" y1="0" x2="2400" y2="1300"/><line x1="2460" y1="0" x2="208.4000000000001" y2="1300"/><line x1="208.4000000000001" y1="0" x2="2460" y2="1300"/><line x1="2520" y1="0" x2="268.4000000000001" y2="1300"/><line x1="268.4000000000001" y1="0" x2="2520" y2="1300"/><line x1="2580" y1="0" x2="328.4000000000001" y2="1300"/><line x1="328.4000000000001" y1="0" x2="2580" y2="1300"/><line x1="2640" y1="0" x2="388.4000000000001" y2="1300"/><line x1="388.4000000000001" y1="0" x2="2640" y2="1300"/><line x1="2700" y1="0" x2="448.4000000000001" y2="1300"/><line x1="448.4000000000001" y1="0" x2="2700" y2="1300"/><line x1="2760" y1="0" x2="508.4000000000001" y2="1300"/><line x1="508.4000000000001" y1="0" x2="2760" y2="1300"/><line x1="2820" y1="0" x2="568.4000000000001" y2="1300"/><line x1="568.4000000000001" y1="0" x2="2820" y2="1300"/><line x1="2880" y1="0" x2="628.4000000000001" y2="1300"/><line x1="628.4000000000001" y1="0" x2="2880" y2="1300"/><line x1="2940" y1="0" x2="688.4000000000001" y2="1300"/><line x1="688.4000000000001" y1="0" x2="2940" y2="1300"/><line x1="3000" y1="0" x2="748.4000000000001" y2="1300"/><line x1="748.4000000000001" y1="0" x2="3000" y2="1300"/><line x1="3060" y1="0" x2="808.4000000000001" y2="1300"/><line x1="808.4000000000001" y1="0" x2="3060" y2="1300"/><line x1="3120" y1="0" x2="868.4000000000001" y2="1300"/><line x1="868.4000000000001" y1="0" x2="3120" y2="1300"/><line x1="3180" y1="0" x2="928.4000000000001" y2="1300"/><line x1="928.4000000000001" y1="0" x2="3180" y2="1300"/><line x1="3240" y1="0" x2="988.4000000000001" y2="1300"/><line x1="988.4000000000001" y1="0" x2="3240" y2="1300"/><line x1="3300" y1="0" x2="1048.4" y2="1300"/><line x1="1048.4" y1="0" x2="3300" y2="1300"/><line x1="3360" y1="0" x2="1108.4" y2="1300"/><line x1="1108.4" y1="0" x2="3360" y2="1300"/><line x1="3420" y1="0" x2="1168.4" y2="1300"/><line x1="1168.4" y1="0" x2="3420" y2="1300"/><line x1="3480" y1="0" x2="1228.4" y2="1300"/><line x1="1228.4" y1="0" x2="3480" y2="1300"/><line x1="3540" y1="0" x2="1288.4" y2="1300"/><line x1="1288.4" y1="0" x2="3540" y2="1300"/><line x1="3600" y1="0" x2="1348.4" y2="1300"/><line x1="1348.4" y1="0" x2="3600" y2="1300"/><line x1="3660" y1="0" x2="1408.4" y2="1300"/><line x1="1408.4" y1="0" x2="3660" y2="1300"/><line x1="3720" y1="0" x2="1468.4" y2="1300"/><line x1="1468.4" y1="0" x2="3720" y2="1300"/><line x1="3780" y1="0" x2="1528.4" y2="1300"/><line x1="1528.4" y1="0" x2="3780" y2="1300"/></g>
+
+<text x="60.0" y="70.0" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="30" font-weight="800" fill="#ffffff" text-anchor="start" letter-spacing="2">CELERIS DEMAND PLANNING CONTROL TOWER</text>
+<text x="60.0" y="102.0" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="16" font-weight="500" fill="#8fb8e8" text-anchor="start" letter-spacing="0">Solution architecture — five layers, each reading only the outputs of the layer below</text>
+<g filter="url(#shadow)">
+<polygon points="700.1,1005.0 1063.8,1215.0 1063.8,1201.5 700.1,991.5" fill="#12223a" fill-opacity="0.93" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1193.7,1140.0 1063.8,1215.0 1063.8,1201.5 1193.7,1126.5" fill="#0c182b" fill-opacity="0.93" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="830.0,916.5 1193.7,1126.5 1063.8,1201.5 700.1,991.5" fill="#1d3557" fill-opacity="0.93" stroke="#4cc9f0" stroke-width="1.6" stroke-linejoin="round" filter="url(#glow)"/>
+</g>
+<line x1="713.1" y1="991.5" x2="713.1" y2="825.0" stroke="#4cc9f0" stroke-width="2.5" opacity="0.75" filter="url(#glow)"/>
+<line x1="1063.8" y1="1194.0" x2="1063.8" y2="1027.5" stroke="#4cc9f0" stroke-width="2.5" opacity="0.75" filter="url(#glow)"/>
+<line x1="1180.7" y1="1126.5" x2="1180.7" y2="960.0" stroke="#4cc9f0" stroke-width="2.5" opacity="0.75" filter="url(#glow)"/>
+<polygon points="767.6,976.5 819.1,1006.2 819.1,985.2 767.6,955.5" fill="#12223a" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="876.2,973.2 819.1,1006.2 819.1,985.2 876.2,952.2" fill="#0c182b" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="824.8,922.5 876.2,952.2 819.1,985.2 767.6,955.5" fill="#4cc9f0" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<polygon points="832.1,1013.7 883.5,1043.4 883.5,1022.4 832.1,992.7" fill="#12223a" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="940.7,1010.4 883.5,1043.4 883.5,1022.4 940.7,989.4" fill="#0c182b" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="889.2,959.7 940.7,989.4 883.5,1022.4 832.1,992.7" fill="#4cc9f0" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<polygon points="896.5,1050.9 948.0,1080.6 948.0,1059.6 896.5,1029.9" fill="#12223a" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1005.1,1047.6 948.0,1080.6 948.0,1059.6 1005.1,1026.6" fill="#0c182b" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="953.7,996.9 1005.1,1026.6 948.0,1059.6 896.5,1029.9" fill="#4cc9f0" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<polygon points="960.9,1088.1 1012.4,1117.8 1012.4,1096.8 960.9,1067.1" fill="#12223a" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1069.5,1084.8 1012.4,1117.8 1012.4,1096.8 1069.5,1063.8" fill="#0c182b" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1018.1,1034.1 1069.5,1063.8 1012.4,1096.8 960.9,1067.1" fill="#4cc9f0" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<polygon points="1025.4,1125.3 1076.8,1155.0 1076.8,1134.0 1025.4,1104.3" fill="#12223a" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1134.0,1122.0 1076.8,1155.0 1076.8,1134.0 1134.0,1101.0" fill="#0c182b" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1082.5,1071.3 1134.0,1101.0 1076.8,1134.0 1025.4,1104.3" fill="#4cc9f0" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<text x="821.9" y="957.9" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">train.csv</text>
+<text x="886.4" y="995.0" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">stockouts</text>
+<text x="950.8" y="1032.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">macro</text>
+<text x="1015.2" y="1069.5" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">sku_master</text>
+<text x="1079.7" y="1106.7" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">events</text>
+<text transform="matrix(0.8660,0.5000,-0.8660,0.5000,733.9,990.0)" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="800" fill="#4cc9f0" text-anchor="start" letter-spacing="1.5">DATA SOURCES</text>
+<line x1="692.1" y1="998.2" x2="425.0" y2="972.2" stroke="#4cc9f0" stroke-width="1.2" opacity="0.6" stroke-dasharray="4 4"/>
+<circle cx="692.1" cy="998.2" r="4" fill="#4cc9f0" filter="url(#glow)"/>
+<text x="60.0" y="964.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff" text-anchor="start" letter-spacing="0">1. Data Sources</text>
+<text x="64.0" y="990.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• Raw ERP extract + reference files</text>
+<text x="64.0" y="1011.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• train.csv 248,248 rows · test.csv 58,219 rows</text>
+<text x="64.0" y="1032.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• stockouts · macro · sku_master · events</text>
+<g filter="url(#shadow)">
+<polygon points="700.1,825.0 1063.8,1035.0 1063.8,1021.5 700.1,811.5" fill="#11261f" fill-opacity="0.93" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1193.7,960.0 1063.8,1035.0 1063.8,1021.5 1193.7,946.5" fill="#0a1a15" fill-opacity="0.93" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="830.0,736.5 1193.7,946.5 1063.8,1021.5 700.1,811.5" fill="#1b3a35" fill-opacity="0.93" stroke="#2ee6a6" stroke-width="1.6" stroke-linejoin="round" filter="url(#glow)"/>
+</g>
+<line x1="713.1" y1="811.5" x2="713.1" y2="645.0" stroke="#2ee6a6" stroke-width="2.5" opacity="0.75" filter="url(#glow)"/>
+<line x1="1063.8" y1="1014.0" x2="1063.8" y2="847.5" stroke="#2ee6a6" stroke-width="2.5" opacity="0.75" filter="url(#glow)"/>
+<line x1="1180.7" y1="946.5" x2="1180.7" y2="780.0" stroke="#2ee6a6" stroke-width="2.5" opacity="0.75" filter="url(#glow)"/>
+<polygon points="767.6,796.5 835.2,835.5 835.2,814.5 767.6,775.5" fill="#11261f" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="892.4,802.5 835.2,835.5 835.2,814.5 892.4,781.5" fill="#0a1a15" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="824.8,742.5 892.4,781.5 835.2,814.5 767.6,775.5" fill="#2ee6a6" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<polygon points="848.2,843.0 915.7,882.0 915.7,861.0 848.2,822.0" fill="#11261f" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="972.9,849.0 915.7,882.0 915.7,861.0 972.9,828.0" fill="#0a1a15" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="905.3,789.0 972.9,828.0 915.7,861.0 848.2,822.0" fill="#2ee6a6" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<polygon points="928.7,889.5 996.3,928.5 996.3,907.5 928.7,868.5" fill="#11261f" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1053.4,895.5 996.3,928.5 996.3,907.5 1053.4,874.5" fill="#0a1a15" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="985.9,835.5 1053.4,874.5 996.3,907.5 928.7,868.5" fill="#2ee6a6" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<polygon points="1009.3,936.0 1076.8,975.0 1076.8,954.0 1009.3,915.0" fill="#11261f" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1134.0,942.0 1076.8,975.0 1076.8,954.0 1134.0,921.0" fill="#0a1a15" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1066.4,882.0 1134.0,921.0 1076.8,954.0 1009.3,915.0" fill="#2ee6a6" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<text x="830.0" y="782.5" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">labels + dates</text>
+<text x="910.5" y="829.0" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">price / units</text>
+<text x="991.1" y="875.5" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">dedupe</text>
+<text x="1071.6" y="922.0" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">stockouts</text>
+<text transform="matrix(0.8660,0.5000,-0.8660,0.5000,733.9,810.0)" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="800" fill="#2ee6a6" text-anchor="start" letter-spacing="1.5">CLEANING + UNCONSTRAINED DEMAND</text>
+<line x1="692.1" y1="818.2" x2="425.0" y2="792.2" stroke="#2ee6a6" stroke-width="1.2" opacity="0.6" stroke-dasharray="4 4"/>
+<circle cx="692.1" cy="818.2" r="4" fill="#2ee6a6" filter="url(#glow)"/>
+<text x="60.0" y="784.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff" text-anchor="start" letter-spacing="0">2. Cleaning + Unconstrained Demand</text>
+<text x="64.0" y="810.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• 43 issue types · 27,836 rows fixed and logged</text>
+<text x="64.0" y="831.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• one clean row per Date-SKU-Region</text>
+<text x="64.0" y="852.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• 4,976 stockouts → requested units</text>
+<g filter="url(#shadow)">
+<polygon points="700.1,645.0 1063.8,855.0 1063.8,841.5 700.1,631.5" fill="#221733" fill-opacity="0.93" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1193.7,780.0 1063.8,855.0 1063.8,841.5 1193.7,766.5" fill="#170f24" fill-opacity="0.93" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="830.0,556.5 1193.7,766.5 1063.8,841.5 700.1,631.5" fill="#33244a" fill-opacity="0.93" stroke="#b388ff" stroke-width="1.6" stroke-linejoin="round" filter="url(#glow)"/>
+</g>
+<line x1="713.1" y1="631.5" x2="713.1" y2="465.0" stroke="#b388ff" stroke-width="2.5" opacity="0.75" filter="url(#glow)"/>
+<line x1="1063.8" y1="834.0" x2="1063.8" y2="667.5" stroke="#b388ff" stroke-width="2.5" opacity="0.75" filter="url(#glow)"/>
+<line x1="1180.7" y1="766.5" x2="1180.7" y2="600.0" stroke="#b388ff" stroke-width="2.5" opacity="0.75" filter="url(#glow)"/>
+<polygon points="767.6,616.5 862.0,671.0 862.0,650.0 767.6,595.5" fill="#221733" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="919.2,638.0 862.0,671.0 862.0,650.0 919.2,617.0" fill="#170f24" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="824.8,562.5 919.2,617.0 862.0,650.0 767.6,595.5" fill="#b388ff" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<polygon points="875.0,678.5 969.4,733.0 969.4,712.0 875.0,657.5" fill="#221733" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1026.6,700.0 969.4,733.0 969.4,712.0 1026.6,679.0" fill="#170f24" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="932.2,624.5 1026.6,679.0 969.4,712.0 875.0,657.5" fill="#b388ff" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<polygon points="982.4,740.5 1076.8,795.0 1076.8,774.0 982.4,719.5" fill="#221733" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1134.0,762.0 1076.8,795.0 1076.8,774.0 1134.0,741.0" fill="#170f24" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1039.6,686.5 1134.0,741.0 1076.8,774.0 982.4,719.5" fill="#b388ff" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<text x="843.4" y="610.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">register</text>
+<text x="950.8" y="672.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">order cycles</text>
+<text x="1058.2" y="734.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">lead / lag</text>
+<text transform="matrix(0.8660,0.5000,-0.8660,0.5000,733.9,630.0)" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="800" fill="#b388ff" text-anchor="start" letter-spacing="1.5">ANOMALIES + DRIVERS</text>
+<line x1="692.1" y1="638.2" x2="425.0" y2="612.2" stroke="#b388ff" stroke-width="1.2" opacity="0.6" stroke-dasharray="4 4"/>
+<circle cx="692.1" cy="638.2" r="4" fill="#b388ff" filter="url(#glow)"/>
+<text x="60.0" y="604.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff" text-anchor="start" letter-spacing="0">3. Anomalies + Drivers</text>
+<text x="64.0" y="630.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• 12,759 flags: error vs real event + action</text>
+<text x="64.0" y="651.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• order-cycle phase · holidays · EV shift</text>
+<text x="64.0" y="672.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• macro lead/lag + lag stability</text>
+<g filter="url(#shadow)">
+<polygon points="700.1,465.0 1063.8,675.0 1063.8,661.5 700.1,451.5" fill="#2a1c0e" fill-opacity="0.93" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1193.7,600.0 1063.8,675.0 1063.8,661.5 1193.7,586.5" fill="#1d1309" fill-opacity="0.93" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="830.0,376.5 1193.7,586.5 1063.8,661.5 700.1,451.5" fill="#3d2a17" fill-opacity="0.93" stroke="#ffb347" stroke-width="1.6" stroke-linejoin="round" filter="url(#glow)"/>
+</g>
+<line x1="713.1" y1="451.5" x2="713.1" y2="285.0" stroke="#ffb347" stroke-width="2.5" opacity="0.75" filter="url(#glow)"/>
+<line x1="1063.8" y1="654.0" x2="1063.8" y2="487.5" stroke="#ffb347" stroke-width="2.5" opacity="0.75" filter="url(#glow)"/>
+<line x1="1180.7" y1="586.5" x2="1180.7" y2="420.0" stroke="#ffb347" stroke-width="2.5" opacity="0.75" filter="url(#glow)"/>
+<polygon points="767.6,436.5 862.0,491.0 862.0,470.0 767.6,415.5" fill="#2a1c0e" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="919.2,458.0 862.0,491.0 862.0,470.0 919.2,437.0" fill="#1d1309" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="824.8,382.5 919.2,437.0 862.0,470.0 767.6,415.5" fill="#ffb347" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<polygon points="875.0,498.5 969.4,553.0 969.4,532.0 875.0,477.5" fill="#2a1c0e" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1026.6,520.0 969.4,553.0 969.4,532.0 1026.6,499.0" fill="#1d1309" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="932.2,444.5 1026.6,499.0 969.4,532.0 875.0,477.5" fill="#ffb347" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<polygon points="982.4,560.5 1076.8,615.0 1076.8,594.0 982.4,539.5" fill="#2a1c0e" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1134.0,582.0 1076.8,615.0 1076.8,594.0 1134.0,561.0" fill="#1d1309" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1039.6,506.5 1134.0,561.0 1076.8,594.0 982.4,539.5" fill="#ffb347" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<text x="843.4" y="430.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">LightGBM</text>
+<text x="950.8" y="492.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">P10/P50/P90</text>
+<text x="1058.2" y="554.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">lifecycle</text>
+<text transform="matrix(0.8660,0.5000,-0.8660,0.5000,733.9,450.0)" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="800" fill="#ffb347" text-anchor="start" letter-spacing="1.5">FORECAST ENGINE</text>
+<line x1="692.1" y1="458.2" x2="425.0" y2="432.2" stroke="#ffb347" stroke-width="1.2" opacity="0.6" stroke-dasharray="4 4"/>
+<circle cx="692.1" cy="458.2" r="4" fill="#ffb347" filter="url(#glow)"/>
+<text x="60.0" y="424.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff" text-anchor="start" letter-spacing="0">4. Forecast Engine</text>
+<text x="64.0" y="450.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• global LightGBM · direct h = 1..19</text>
+<text x="64.0" y="471.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• WAPE 0.283 vs naive 0.377</text>
+<text x="64.0" y="492.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• P10 / P50 / P90 · launches · EOL · events</text>
+<g filter="url(#shadow)">
+<polygon points="700.1,285.0 1063.8,495.0 1063.8,481.5 700.1,271.5" fill="#0e2638" fill-opacity="0.93" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1193.7,420.0 1063.8,495.0 1063.8,481.5 1193.7,406.5" fill="#091a27" fill-opacity="0.93" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="830.0,196.5 1193.7,406.5 1063.8,481.5 700.1,271.5" fill="#163a52" fill-opacity="0.93" stroke="#4cc9f0" stroke-width="1.6" stroke-linejoin="round" filter="url(#glow)"/>
+</g>
+<polygon points="767.6,256.5 862.0,311.0 862.0,290.0 767.6,235.5" fill="#0e2638" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="919.2,278.0 862.0,311.0 862.0,290.0 919.2,257.0" fill="#091a27" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="824.8,202.5 919.2,257.0 862.0,290.0 767.6,235.5" fill="#4cc9f0" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<polygon points="875.0,318.5 969.4,373.0 969.4,352.0 875.0,297.5" fill="#0e2638" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1026.6,340.0 969.4,373.0 969.4,352.0 1026.6,319.0" fill="#091a27" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="932.2,264.5 1026.6,319.0 969.4,352.0 875.0,297.5" fill="#4cc9f0" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<polygon points="982.4,380.5 1076.8,435.0 1076.8,414.0 982.4,359.5" fill="#0e2638" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1134.0,402.0 1076.8,435.0 1076.8,414.0 1134.0,381.0" fill="#091a27" fill-opacity="0.95" stroke="none" stroke-width="1" stroke-linejoin="round" />
+<polygon points="1039.6,326.5 1134.0,381.0 1076.8,414.0 982.4,359.5" fill="#4cc9f0" fill-opacity="0.95" stroke="none" stroke-width="1.6" stroke-linejoin="round" />
+<text x="843.4" y="250.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">11 views</text>
+<text x="950.8" y="312.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">what-if</text>
+<text x="1058.2" y="374.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="800" fill="#06101e" text-anchor="middle" letter-spacing="0">P90 plan</text>
+<text transform="matrix(0.8660,0.5000,-0.8660,0.5000,733.9,270.0)" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="800" fill="#4cc9f0" text-anchor="start" letter-spacing="1.5">PLANNING CONTROL TOWER</text>
+<line x1="692.1" y1="278.2" x2="425.0" y2="252.2" stroke="#4cc9f0" stroke-width="1.2" opacity="0.6" stroke-dasharray="4 4"/>
+<circle cx="692.1" cy="278.2" r="4" fill="#4cc9f0" filter="url(#glow)"/>
+<text x="60.0" y="244.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="700" fill="#ffffff" text-anchor="start" letter-spacing="0">5. Planning Control Tower</text>
+<text x="64.0" y="270.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• Streamlit · 11 views · shared filters</text>
+<text x="64.0" y="291.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• history → forecast on one timeline</text>
+<text x="64.0" y="312.2" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">• what-if · P90 procurement · exceptions</text>
+<rect x="1150" y="120" width="320" height="140" rx="14" fill="#0b1426" stroke="#ffb347" stroke-opacity="0.7" filter="url(#glow)"/>
+<text x="1170.0" y="154.0" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="800" fill="#ffb347" text-anchor="start" letter-spacing="1">19-MONTH BACKTEST (3 ORIGINS)</text>
+<text x="1170.0" y="200.0" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="34" font-weight="800" fill="#ffffff" text-anchor="start" letter-spacing="0">WAPE 0.283</text>
+<text x="1170.0" y="230.0" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">25% better than seasonal naive (0.377)</text>
+<text x="1170.0" y="248.0" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13.5" font-weight="400" fill="#b9cbe6" text-anchor="start" letter-spacing="0">total-level WAPE 0.088 · P10–P90 cover 75%</text>
+</svg>

@@ -10,6 +10,7 @@ echo [3/5] Anomaly register
 python src/anomalies.py || exit /b 1
 echo [4/5] Backtest + final forecast
 python src/models.py || exit /b 1
-echo [5/5] Tests
+echo [5/5] Diagrams + tests
+python src/generate_diagrams.py || exit /b 1
 python -m pytest tests -q || exit /b 1
 echo Done. Dashboard: streamlit run dashboard/app.py

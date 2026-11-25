@@ -16,6 +16,18 @@ built from a messy ERP extract, with an 11-view Streamlit control tower for plan
 > available at the forecast origin — the same code path that produces the submission. No one-step-ahead
 > lags leak into the backtest.
 
+**Live demo:** https://celeris-demand-forecasting-mks-ai.streamlit.app/
+
+## Architecture
+
+![Five-layer 3D architecture: data sources, cleaning and unconstrained demand, anomalies and drivers, forecast engine, planning control tower](assets/architecture_3d.svg)
+
+## Pipeline flow
+
+![3D pipeline flow: raw data, clean.py, features.py, anomalies.py, models.py with a rolling-origin backtest loop, then submission and dashboard](assets/pipeline_flow_3d.svg)
+
+*Both diagrams are drawn by `src/generate_diagrams.py` from the pipeline's own reports, so their numbers always match the latest run.*
+
 ---
 
 ## Quick start
@@ -35,6 +47,7 @@ src/clean.py       1. cleaning, unconstrained demand, data-quality report
 src/features.py    2. feature library (origin-safe), macro lead/lag, intermittency
 src/anomalies.py   3. anomaly register: errors vs real events, with the action taken
 src/models.py      4. rolling-origin backtest, final model, P10/P50/P90, lifecycle & events
+src/generate_diagrams.py   3D architecture + flow diagrams (from the reports)
 tests/             15 tests (helpers, clean-data invariants, submission, hierarchy, metrics)
 dashboard/app.py   11-view control tower, reads only pipeline outputs
 ```
