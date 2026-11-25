@@ -1,0 +1,113 @@
+Product_Family,Indicator,Period,Best_Lag,Corr
+Brake & Safety Systems,ISM_Manufacturing_PMI,2020-2022,1,0.655
+Brake & Safety Systems,ISM_Manufacturing_PMI,2023-2026,0,-0.414
+Brake & Safety Systems,Auto_Production_YoY_Pct,2020-2022,0,0.687
+Brake & Safety Systems,Auto_Production_YoY_Pct,2023-2026,2,0.473
+Brake & Safety Systems,Vehicle_Inventory_Days,2020-2022,2,-0.535
+Brake & Safety Systems,Vehicle_Inventory_Days,2023-2026,8,0.241
+Brake & Safety Systems,Raw_Material_Cost_Index,2020-2022,12,-0.456
+Brake & Safety Systems,Raw_Material_Cost_Index,2023-2026,0,-0.759
+Brake & Safety Systems,New_Vehicle_Orders_Index,2020-2022,0,0.725
+Brake & Safety Systems,New_Vehicle_Orders_Index,2023-2026,0,-0.532
+Brake & Safety Systems,Industrial_Util_Rate_Pct,2020-2022,12,-0.615
+Brake & Safety Systems,Industrial_Util_Rate_Pct,2023-2026,6,0.576
+Brake & Safety Systems,Fuel_Price_Index,2020-2022,11,-0.534
+Brake & Safety Systems,Fuel_Price_Index,2023-2026,0,-0.79
+Brake & Safety Systems,EV_Adoption_Index,2020-2022,12,-0.493
+Brake & Safety Systems,EV_Adoption_Index,2023-2026,0,0.379
+Chassis & Structural,ISM_Manufacturing_PMI,2020-2022,12,-0.658
+Chassis & Structural,ISM_Manufacturing_PMI,2023-2026,12,-0.448
+Chassis & Structural,Auto_Production_YoY_Pct,2020-2022,0,0.659
+Chassis & Structural,Auto_Production_YoY_Pct,2023-2026,3,0.711
+Chassis & Structural,Vehicle_Inventory_Days,2020-2022,2,-0.531
+Chassis & Structural,Vehicle_Inventory_Days,2023-2026,5,0.567
+Chassis & Structural,Raw_Material_Cost_Index,2020-2022,12,-0.465
+Chassis & Structural,Raw_Material_Cost_Index,2023-2026,0,-0.654
+Chassis & Structural,New_Vehicle_Orders_Index,2020-2022,0,0.745
+Chassis & Structural,New_Vehicle_Orders_Index,2023-2026,0,-0.236
+Chassis & Structural,Industrial_Util_Rate_Pct,2020-2022,12,-0.646
+Chassis & Structural,Industrial_Util_Rate_Pct,2023-2026,5,0.414
+Chassis & Structural,Fuel_Price_Index,2020-2022,12,-0.552
+Chassis & Structural,Fuel_Price_Index,2023-2026,0,-0.648
+Chassis & Structural,EV_Adoption_Index,2020-2022,12,-0.489
+Chassis & Structural,EV_Adoption_Index,2023-2026,1,0.719
+Electrical Assemblies,ISM_Manufacturing_PMI,2020-2022,1,0.715
+Electrical Assemblies,ISM_Manufacturing_PMI,2023-2026,1,0.81
+Electrical Assemblies,Auto_Production_YoY_Pct,2020-2022,1,0.636
+Electrical Assemblies,Auto_Production_YoY_Pct,2023-2026,2,0.309
+Electrical Assemblies,Vehicle_Inventory_Days,2020-2022,3,-0.602
+Electrical Assemblies,Vehicle_Inventory_Days,2023-2026,7,0.726
+Electrical Assemblies,Raw_Material_Cost_Index,2020-2022,12,-0.552
+Electrical Assemblies,Raw_Material_Cost_Index,2023-2026,5,0.411
+Electrical Assemblies,New_Vehicle_Orders_Index,2020-2022,1,0.82
+Electrical Assemblies,New_Vehicle_Orders_Index,2023-2026,3,0.824
+Electrical Assemblies,Industrial_Util_Rate_Pct,2020-2022,12,-0.726
+Electrical Assemblies,Industrial_Util_Rate_Pct,2023-2026,1,0.802
+Electrical Assemblies,Fuel_Price_Index,2020-2022,12,-0.647
+Electrical Assemblies,Fuel_Price_Index,2023-2026,12,-0.366
+Electrical Assemblies,EV_Adoption_Index,2020-2022,12,-0.559
+Electrical Assemblies,EV_Adoption_Index,2023-2026,0,0.449
+Hydraulic Systems,ISM_Manufacturing_PMI,2020-2022,1,0.703
+Hydraulic Systems,ISM_Manufacturing_PMI,2023-2026,2,0.95
+Hydraulic Systems,Auto_Production_YoY_Pct,2020-2022,0,0.635
+Hydraulic Systems,Auto_Production_YoY_Pct,2023-2026,12,0.388
+Hydraulic Systems,Vehicle_Inventory_Days,2020-2022,2,-0.617
+Hydraulic Systems,Vehicle_Inventory_Days,2023-2026,9,0.601
+Hydraulic Systems,Raw_Material_Cost_Index,2020-2022,12,-0.543
+Hydraulic Systems,Raw_Material_Cost_Index,2023-2026,5,0.596
+Hydraulic Systems,New_Vehicle_Orders_Index,2020-2022,1,0.81
+Hydraulic Systems,New_Vehicle_Orders_Index,2023-2026,4,0.887
+Hydraulic Systems,Industrial_Util_Rate_Pct,2020-2022,12,-0.712
+Hydraulic Systems,Industrial_Util_Rate_Pct,2023-2026,12,-0.78
+Hydraulic Systems,Fuel_Price_Index,2020-2022,12,-0.627
+Hydraulic Systems,Fuel_Price_Index,2023-2026,12,-0.621
+Hydraulic Systems,EV_Adoption_Index,2020-2022,12,-0.557
+Hydraulic Systems,EV_Adoption_Index,2023-2026,0,0.192
+Powertrain Components,ISM_Manufacturing_PMI,2020-2022,1,0.698
+Powertrain Components,ISM_Manufacturing_PMI,2023-2026,1,0.501
+Powertrain Components,Auto_Production_YoY_Pct,2020-2022,12,-0.625
+Powertrain Components,Auto_Production_YoY_Pct,2023-2026,2,0.426
+Powertrain Components,Vehicle_Inventory_Days,2020-2022,3,-0.599
+Powertrain Components,Vehicle_Inventory_Days,2023-2026,6,0.647
+Powertrain Components,Raw_Material_Cost_Index,2020-2022,12,-0.555
+Powertrain Components,Raw_Material_Cost_Index,2023-2026,5,0.346
+Powertrain Components,New_Vehicle_Orders_Index,2020-2022,1,0.838
+Powertrain Components,New_Vehicle_Orders_Index,2023-2026,3,0.668
+Powertrain Components,Industrial_Util_Rate_Pct,2020-2022,12,-0.741
+Powertrain Components,Industrial_Util_Rate_Pct,2023-2026,1,0.853
+Powertrain Components,Fuel_Price_Index,2020-2022,12,-0.669
+Powertrain Components,Fuel_Price_Index,2023-2026,0,-0.444
+Powertrain Components,EV_Adoption_Index,2020-2022,12,-0.543
+Powertrain Components,EV_Adoption_Index,2023-2026,0,0.436
+Precision Machined Parts,ISM_Manufacturing_PMI,2020-2022,1,0.675
+Precision Machined Parts,ISM_Manufacturing_PMI,2023-2026,2,0.74
+Precision Machined Parts,Auto_Production_YoY_Pct,2020-2022,0,0.663
+Precision Machined Parts,Auto_Production_YoY_Pct,2023-2026,4,0.256
+Precision Machined Parts,Vehicle_Inventory_Days,2020-2022,2,-0.572
+Precision Machined Parts,Vehicle_Inventory_Days,2023-2026,8,0.653
+Precision Machined Parts,Raw_Material_Cost_Index,2020-2022,12,-0.497
+Precision Machined Parts,Raw_Material_Cost_Index,2023-2026,6,0.388
+Precision Machined Parts,New_Vehicle_Orders_Index,2020-2022,0,0.788
+Precision Machined Parts,New_Vehicle_Orders_Index,2023-2026,5,0.745
+Precision Machined Parts,Industrial_Util_Rate_Pct,2020-2022,12,-0.678
+Precision Machined Parts,Industrial_Util_Rate_Pct,2023-2026,2,0.86
+Precision Machined Parts,Fuel_Price_Index,2020-2022,12,-0.586
+Precision Machined Parts,Fuel_Price_Index,2023-2026,12,-0.23
+Precision Machined Parts,EV_Adoption_Index,2020-2022,12,-0.512
+Precision Machined Parts,EV_Adoption_Index,2023-2026,0,0.455
+Thermal Management,ISM_Manufacturing_PMI,2020-2022,1,0.684
+Thermal Management,ISM_Manufacturing_PMI,2023-2026,1,0.606
+Thermal Management,Auto_Production_YoY_Pct,2020-2022,0,0.668
+Thermal Management,Auto_Production_YoY_Pct,2023-2026,10,0.623
+Thermal Management,Vehicle_Inventory_Days,2020-2022,2,-0.561
+Thermal Management,Vehicle_Inventory_Days,2023-2026,9,0.814
+Thermal Management,Raw_Material_Cost_Index,2020-2022,12,-0.498
+Thermal Management,Raw_Material_Cost_Index,2023-2026,11,-0.317
+Thermal Management,New_Vehicle_Orders_Index,2020-2022,0,0.764
+Thermal Management,New_Vehicle_Orders_Index,2023-2026,5,0.586
+Thermal Management,Industrial_Util_Rate_Pct,2020-2022,12,-0.663
+Thermal Management,Industrial_Util_Rate_Pct,2023-2026,2,0.596
+Thermal Management,Fuel_Price_Index,2020-2022,11,-0.573
+Thermal Management,Fuel_Price_Index,2023-2026,2,-0.496
+Thermal Management,EV_Adoption_Index,2020-2022,12,-0.527
+Thermal Management,EV_Adoption_Index,2023-2026,0,0.575

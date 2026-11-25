@@ -1,694 +1,465 @@
 """
-MKS Hackathon — Demand Forecasting & Planning Control Tower Dashboard
-Usage: streamlit run dashboard/app.py
+Celeris Automobili - Demand Planning Control Tower
+    streamlit run dashboard/app.py
 
-Features:
-  - 5 Core/Required Views: Executive Overview, Data Health, Demand Explorer, Anomaly Monitor, Forecast & Accuracy
-  - 5 Advanced/Expert Views: Macro Lead/Lag Heatmap, SKU Lifecycle, What-If Scenario Simulator, Procurement Plan (P90), Planner Exceptions & Lost Sales (with 1-click Data Download)
+Reads ONLY pipeline outputs (data/cleaned, data/features, data/forecasts, reports) - no typed-in numbers.
+Part A (training data): Executive overview, Data health, Demand explorer, Anomaly monitor
+Part B (prediction):    Forecast & accuracy, Macro drivers, Lifecycle, What-if, Procurement (P90),
+                        Stockouts & exceptions, Downloads
 """
-
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-import lightgbm as lgb
 import json
 from pathlib import Path
 
-# ═══════════════════════════════════════════════════════════════════════
-# CONFIG & PAGE SETUP
-# ═══════════════════════════════════════════════════════════════════════
-st.set_page_config(
-    page_title="Celeris Automobili — Demand Planning Control Tower",
-    page_icon="🏭",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+import lightgbm as lgb
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CLEAN_DIR = PROJECT_ROOT / 'data' / 'cleaned'
-FORECAST_DIR = PROJECT_ROOT / 'data' / 'forecasts'
-FEATURE_DIR = PROJECT_ROOT / 'data' / 'features'
-REPORT_DIR = PROJECT_ROOT / 'reports'
+st.set_page_config(page_title='Celeris Planning Control Tower', page_icon='🏭', layout='wide')
+ROOT = Path(__file__).resolve().parent.parent
+CLEAN, FEAT, FC, REP = (ROOT / 'data' / 'cleaned', ROOT / 'data' / 'features', ROOT / 'data' / 'forecasts',
+                        ROOT / 'reports')
+HIST_C, UNC_C, FC_C, BAND_C = '#8a94a6', '#2b6cb0', '#dd6b20', 'rgba(221,107,32,0.18)'
+SPLIT = '2026-10'
+
+
+_N = [0]
+
+
+def chart(where, fig, **kw):
+    """plotly_chart with a stable unique key per position on the page."""
+    _N[0] += 1
+    return where.plotly_chart(fig, key=f'chart_{_N[0]}', **kw)
 
 
 @st.cache_data
-def load_data():
-    if (CLEAN_DIR / 'train_clean.parquet').exists():
-        train = pd.read_parquet(CLEAN_DIR / 'train_clean.parquet')
-    else:
-        train = pd.read_csv(CLEAN_DIR / 'train_clean.csv', low_memory=False)
-
-    forecast = pd.read_csv(FORECAST_DIR / 'forecast_detail.csv') if (FORECAST_DIR / 'forecast_detail.csv').exists() else None
-    backtest = pd.read_csv(FORECAST_DIR / 'backtest_results.csv') if (FORECAST_DIR / 'backtest_results.csv').exists() else None
-    feat_imp = pd.read_csv(FORECAST_DIR / 'feature_importance.csv') if (FORECAST_DIR / 'feature_importance.csv').exists() else None
-    anomalies = pd.read_csv(REPORT_DIR / 'anomaly_register.csv') if (REPORT_DIR / 'anomaly_register.csv').exists() else None
-    stockouts = pd.read_csv(CLEAN_DIR / 'inventory_stockouts_clean.csv', low_memory=False) if (CLEAN_DIR / 'inventory_stockouts_clean.csv').exists() else None
-    macro = pd.read_csv(CLEAN_DIR / 'macro_indicators_clean.csv', low_memory=False) if (CLEAN_DIR / 'macro_indicators_clean.csv').exists() else None
-    sku_m = pd.read_csv(CLEAN_DIR / 'sku_master_clean.csv', low_memory=False) if (CLEAN_DIR / 'sku_master_clean.csv').exists() else None
-
-    if (FEATURE_DIR / 'test_features.parquet').exists():
-        test_feat = pd.read_parquet(FEATURE_DIR / 'test_features.parquet')
-    elif (FEATURE_DIR / 'test_features.csv').exists():
-        test_feat = pd.read_csv(FEATURE_DIR / 'test_features.csv', low_memory=False)
-    else:
-        test_feat = None
-
-    quality = {}
-    if (REPORT_DIR / 'data_quality_report.json').exists():
-        with open(REPORT_DIR / 'data_quality_report.json') as f:
-            quality = json.load(f)
-    
-    metrics = {}
-    if (REPORT_DIR / 'model_metrics.json').exists():
-        with open(REPORT_DIR / 'model_metrics.json') as f:
-            metrics = json.load(f)
-            
-    model = None
-    if (FORECAST_DIR / 'lgb_model.txt').exists():
-        model = lgb.Booster(model_file=str(FORECAST_DIR / 'lgb_model.txt'))
-        
-    features_list = []
-    if (FORECAST_DIR / 'model_features.json').exists():
-        with open(FORECAST_DIR / 'model_features.json') as f:
-            features_list = json.load(f)
-            
-    return train, forecast, backtest, feat_imp, anomalies, quality, metrics, stockouts, macro, sku_m, test_feat, model, features_list
-
-
-train, forecast, backtest, feat_imp, anomalies, quality_report, model_metrics, stockouts, macro, sku_master, test_features, lgb_model, model_features = load_data()
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# SIDEBAR FILTERS (Synchronized across all views)
-# ═══════════════════════════════════════════════════════════════════════
-st.sidebar.markdown("### 🏭 Celeris Planning Control Tower")
-st.sidebar.caption("MKS AI & Data Hackathon 2026")
-st.sidebar.divider()
-
-families = sorted(train['Product_Family'].dropna().unique().tolist())
-selected_families = st.sidebar.multiselect("Product Family", families, default=families)
-
-regions = sorted(train['Region'].dropna().unique().tolist())
-selected_regions = st.sidebar.multiselect("Region", regions, default=regions)
-
-channels = sorted(train['Sales_Channel'].dropna().unique().tolist())
-selected_channels = st.sidebar.multiselect("Sales Channel", channels, default=channels)
-
-customers = sorted(train['Customer_Name'].dropna().unique().tolist())
-selected_customers = st.sidebar.multiselect("Customer", customers, default=customers)
-
-# Apply filters to train
-mask = (
-    train['Product_Family'].isin(selected_families) &
-    train['Region'].isin(selected_regions) &
-    train['Sales_Channel'].isin(selected_channels) &
-    train['Customer_Name'].isin(selected_customers)
-)
-filtered_train = train[mask]
-
-# Apply filters to forecast
-if forecast is not None:
-    fc_mask = pd.Series(True, index=forecast.index)
-    if 'Product_Family' in forecast.columns:
-        fc_mask = fc_mask & forecast['Product_Family'].isin(selected_families)
-    if 'Region' in forecast.columns:
-        fc_mask = fc_mask & forecast['Region'].isin(selected_regions)
-    if 'Customer_Name' in forecast.columns:
-        fc_mask = fc_mask & forecast['Customer_Name'].isin(selected_customers)
-    filtered_forecast = forecast[fc_mask]
-else:
-    filtered_forecast = None
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# NAVIGATION TABS (5 Required + 5 Expert Optional Views)
-# ═══════════════════════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
-    "📊 Executive Overview",
-    "🔧 Data Health",
-    "📈 Demand Explorer",
-    "⚠️ Anomaly Monitor",
-    "🎯 Forecast & Accuracy",
-    "🌍 Macro Heatmap",
-    "📋 Lifecycle View",
-    "🔮 What-If Simulator",
-    "📦 Procurement (P90)",
-    "🚨 Planner Exceptions & Lost Sales"
-])
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# TAB 1: EXECUTIVE OVERVIEW
-# ═══════════════════════════════════════════════════════════════════════
-with tab1:
-    st.header("📊 Executive Overview — Demand Planning Control Tower")
-    st.markdown("*Unified continuous timeline from historical actuals (Jan 2019 – Oct 2026) to unconstrained forecast (Nov 2026 – May 2028)*")
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    total_units = int(filtered_train['Units_Sold'].sum())
-    total_revenue = filtered_train['Revenue_USD'].sum()
-    avg_monthly = int(filtered_train.groupby('Date')['Units_Sold'].sum().mean()) if len(filtered_train) > 0 else 0
-    num_skus = filtered_train['SKU_ID'].nunique()
-    
-    col1.metric("Historical Units Sold", f"{total_units:,}")
-    col2.metric("Historical Revenue", f"${total_revenue/1e6:,.1f}M")
-    col3.metric("Avg Monthly Demand", f"{avg_monthly:,}")
-    col4.metric("Active SKUs Filtered", f"{num_skus:,}")
-    
-    if filtered_forecast is not None and len(filtered_forecast) > 0:
-        forecast_total = int(filtered_forecast['Units_Sold_Forecast'].sum())
-        col5.metric("19-Mo Forecast Demand", f"{forecast_total:,}")
-    
-    st.divider()
-    
-    # Continuous Timeline Chart
-    hist_monthly = filtered_train.groupby('Date').agg(Units=('Units_Sold', 'sum')).reset_index().sort_values('Date')
-    hist_monthly['Type'] = 'Historical Demand'
-    
-    if filtered_forecast is not None and len(filtered_forecast) > 0:
-        fc_monthly = filtered_forecast.groupby('Date').agg(
-            Units=('Units_Sold_Forecast', 'sum'),
-            P10=('Forecast_P10', 'sum') if 'Forecast_P10' in filtered_forecast.columns else ('Units_Sold_Forecast', 'sum'),
-            P90=('Forecast_P90', 'sum') if 'Forecast_P90' in filtered_forecast.columns else ('Units_Sold_Forecast', 'sum'),
-        ).reset_index().sort_values('Date')
-        fc_monthly['Type'] = 'Forecast (P50)'
-    else:
-        fc_monthly = pd.DataFrame()
-        
-    fig = go.Figure()
-    
-    if len(hist_monthly) > 0:
-        fig.add_trace(go.Scatter(
-            x=hist_monthly['Date'], y=hist_monthly['Units'],
-            name='Historical Demand', mode='lines+markers',
-            line=dict(color='#1f77b4', width=2.5),
-            marker=dict(size=4)
-        ))
-    
-    if len(fc_monthly) > 0 and len(hist_monthly) > 0:
-        last_hist = hist_monthly.iloc[-1:][['Date', 'Units']]
-        fc_stitch = pd.concat([last_hist, fc_monthly[['Date', 'Units']]], ignore_index=True)
-        
-        fig.add_trace(go.Scatter(
-            x=fc_stitch['Date'], y=fc_stitch['Units'],
-            name='19-Month Forecast (P50)', mode='lines+markers',
-            line=dict(color='#ff7f0e', width=2.5, dash='dash'),
-            marker=dict(size=4)
-        ))
-        
-        # Uncertainty band
-        if 'P10' in fc_monthly.columns and 'P90' in fc_monthly.columns:
-            fig.add_trace(go.Scatter(
-                x=fc_monthly['Date'], y=fc_monthly['P90'],
-                name='P90 (Upper Bound)', mode='lines', line=dict(width=0),
-                showlegend=False
-            ))
-            fig.add_trace(go.Scatter(
-                x=fc_monthly['Date'], y=fc_monthly['P10'],
-                name='P10 - P90 Planning Range', mode='lines',
-                fill='tonexty', fillcolor='rgba(255, 127, 14, 0.18)',
-                line=dict(width=0)
-            ))
-            
-        split_date = hist_monthly['Date'].max()
-        fig.add_shape(
-            type="line", x0=split_date, x1=split_date, y0=0, y1=1, yref="paper",
-            line=dict(color="gray", dash="dot", width=1.5)
-        )
-        fig.add_annotation(
-            x=split_date, y=1.02, yref="paper", text="Forecast Origin (Nov 2026)",
-            showarrow=False, font=dict(color="gray", size=11)
-        )
-    
-    fig.update_layout(
-        title="Demand Trajectory — Continuous History through 2028-05",
-        xaxis_title="Month", yaxis_title="Total Units Sold",
-        height=430, hovermode='x unified', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+def load():
+    d = dict(
+        train=pd.read_parquet(CLEAN / 'train_clean.parquet'),
+        fc=pd.read_csv(FC / 'forecast_detail.csv'),
+        bt=pd.read_parquet(FC / 'backtest_results.parquet'),
+        imp=pd.read_csv(FC / 'feature_importance.csv'),
+        anom=pd.read_csv(REP / 'anomaly_register.csv'),
+        so=pd.read_csv(CLEAN / 'inventory_stockouts_clean.csv'),
+        macro=pd.read_csv(CLEAN / 'macro_indicators_clean.csv'),
+        sku=pd.read_csv(CLEAN / 'sku_master_clean.csv', dtype=str),
+        lag=pd.read_csv(FEAT / 'macro_lead_lag.csv'),
+        stab=pd.read_csv(FEAT / 'macro_lag_stability.csv'),
+        ev=pd.read_csv(FEAT / 'ev_transition.csv'),
+        ic=pd.read_csv(FEAT / 'intermittency_classes.csv'),
+        ramp=pd.read_csv(FC / 'launch_ramp_analogs.csv'),
+        hier=pd.read_csv(FC / 'hierarchical_reconciliation.csv'),
+        quality=json.loads((REP / 'data_quality_report.json').read_text()),
+        metrics=json.loads((REP / 'model_metrics.json').read_text()),
     )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
-        fam_mix = filtered_train.groupby('Product_Family')['Units_Sold'].sum().reset_index()
-        fig_fam = px.pie(fam_mix, values='Units_Sold', names='Product_Family', title='Demand by Product Family', hole=0.35)
-        fig_fam.update_layout(height=330, margin=dict(t=40, b=10, l=10, r=10))
-        st.plotly_chart(fig_fam, use_container_width=True)
-    with col_b:
-        reg_mix = filtered_train.groupby('Region')['Units_Sold'].sum().reset_index()
-        fig_reg = px.pie(reg_mix, values='Units_Sold', names='Region', title='Demand by Region', hole=0.35)
-        fig_reg.update_layout(height=330, margin=dict(t=40, b=10, l=10, r=10))
-        st.plotly_chart(fig_reg, use_container_width=True)
-    with col_c:
-        ch_mix = filtered_train.groupby('Sales_Channel')['Units_Sold'].sum().reset_index()
-        fig_ch = px.pie(ch_mix, values='Units_Sold', names='Sales_Channel', title='Demand by Sales Channel', hole=0.35)
-        fig_ch.update_layout(height=330, margin=dict(t=40, b=10, l=10, r=10))
-        st.plotly_chart(fig_ch, use_container_width=True)
+    d['issues_rows'] = REP / 'data_quality_issues.csv'
+    return d
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# TAB 2: DATA HEALTH
-# ═══════════════════════════════════════════════════════════════════════
-with tab2:
-    st.header("🔧 Data Health & Cleaning Pipeline Audit")
-    
-    if quality_report:
-        summary = quality_report.get('summary', {})
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Raw ERP Transactions", f"{summary.get('total_rows_raw', 0):,}")
-        col2.metric("Cleaned Aggregated Rows", f"{summary.get('total_rows_clean', 0):,}")
-        col3.metric("Invalid/Duplicate Rows Removed", f"{summary.get('rows_removed', 0):,}")
-        col4.metric("Hygiene Issues Remediated", summary.get('total_issues_found', 0))
-        
-        st.divider()
-        issues = quality_report.get('issues', [])
-        if issues:
-            issues_df = pd.DataFrame(issues)
-            st.subheader("Data Cleaning Log by Category")
-            st.dataframe(issues_df, use_container_width=True, hide_index=True)
-            
-            fig_issues = px.bar(
-                issues_df, x='type', y=[i.get('rows_affected', i.get('rows_removed', 100)) for i in issues],
-                title="Impact Scope: Rows Affected by Data Issue Type",
-                labels={'type': 'Issue Category', 'y': 'Estimated Rows Remediated'},
-                color_discrete_sequence=['#4A90E2']
-            )
-            fig_issues.update_layout(height=330, xaxis_tickangle=35)
-            st.plotly_chart(fig_issues, use_container_width=True)
+@st.cache_resource
+def load_model():
+    return (lgb.Booster(model_file=str(FC / 'lgb_model.txt')), json.loads((FC / 'model_features.json').read_text()),
+            pd.read_parquet(FEAT / 'test_features.parquet'))
+
+
+D = load()
+train, fc, bt, anom = D['train'], D['fc'], D['bt'], D['anom']
+M = D['metrics']
+
+# ════════════════════════════════════════════════════════════════════
+# SHARED FILTERS
+# ════════════════════════════════════════════════════════════════════
+sb = st.sidebar
+sb.markdown('## 🏭 Celeris Control Tower')
+sb.caption('Filters apply to every view (history and forecast)')
+fam_all = sorted(train['Product_Family'].unique())
+f_fam = sb.multiselect('Product family', fam_all, placeholder='All families')
+sku_pool = sorted(set(train.loc[train['Product_Family'].isin(f_fam or fam_all), 'SKU_ID']) |
+                  set(fc.loc[fc['Product_Family'].isin(f_fam or fam_all), 'SKU_ID']))
+f_sku = sb.multiselect('SKU', sku_pool, placeholder='All SKUs')
+f_reg = sb.multiselect('Region', sorted(train['Region'].unique()), placeholder='All regions')
+f_ch = sb.multiselect('Sales channel', sorted(train['Sales_Channel'].unique()), placeholder='All channels')
+f_cu = sb.multiselect('Customer', sorted(train['Customer_Name'].unique()), placeholder='All customers')
+
+
+def filt(df):
+    m = pd.Series(True, index=df.index)
+    for c, v in [('Product_Family', f_fam), ('SKU_ID', f_sku), ('Region', f_reg), ('Sales_Channel', f_ch),
+                 ('Customer_Name', f_cu)]:
+        if v and c in df.columns:
+            m &= df[c].isin(v)
+    return df[m]
+
+
+T, F, B = filt(train), filt(fc), filt(bt)
+sb.divider()
+sb.metric('History rows in view', f'{len(T):,}')
+sb.metric('Forecast rows in view', f'{len(F):,}')
+sb.caption(f"Backtest WAPE (19-mo, 3 origins): **{M['overall']['LightGBM_P50']['wape']:.3f}** "
+           f"vs seasonal naive {M['overall']['Seasonal_Naive']['wape']:.3f}")
+
+
+def timeline(T, F, value='units', title=''):
+    """History (shipped + unconstrained) and forecast (P10-P90 band) on one continuous axis."""
+    if value == 'units':
+        h = T.groupby('Date')[['Units_Sold', 'Unconstrained_Demand']].sum()
+        f = F.groupby('Date')[['Units_Sold_Forecast', 'Forecast_P10', 'Forecast_P90']].sum()
     else:
-        st.info("Quality report not found.")
+        T = T.assign(UR=T['Unconstrained_Demand'] * T['Unit_Price_USD'])
+        h = T.groupby('Date')[['Revenue_USD', 'UR']].sum().rename(columns={'Revenue_USD': 'Units_Sold', 'UR': 'Unconstrained_Demand'})
+        F = F.assign(R10=F['Forecast_P10'] * F['Unit_Price_USD'], R90=F['Forecast_P90'] * F['Unit_Price_USD'])
+        f = F.groupby('Date')[['Revenue_Forecast_USD', 'R10', 'R90']].sum()
+        f.columns = ['Units_Sold_Forecast', 'Forecast_P10', 'Forecast_P90']
+    fig = go.Figure()
+    if len(f):
+        fig.add_trace(go.Scatter(x=list(f.index) + list(f.index[::-1]),
+                                 y=list(f['Forecast_P90']) + list(f['Forecast_P10'][::-1]),
+                                 fill='toself', fillcolor=BAND_C, line=dict(width=0), name='P10–P90 range'))
+    fig.add_trace(go.Scatter(x=h.index, y=h['Units_Sold'], name='Shipped (actual)', line=dict(color=HIST_C, width=1.5)))
+    fig.add_trace(go.Scatter(x=h.index, y=h['Unconstrained_Demand'], name='Unconstrained demand',
+                             line=dict(color=UNC_C, width=1.5, dash='dot')))
+    if len(f) and len(h):
+        x = [h.index[-1]] + list(f.index)
+        y = [h['Unconstrained_Demand'].iloc[-1]] + list(f['Units_Sold_Forecast'])
+        fig.add_trace(go.Scatter(x=x, y=y, name='Forecast P50', line=dict(color=FC_C, width=2.5)))
+    fig.add_vline(x=SPLIT, line_dash='dash', line_color='grey')
+    fig.add_annotation(x=SPLIT, y=1, yref='paper', text='forecast →', showarrow=False, xanchor='left')
+    fig.update_layout(title=title, height=420, hovermode='x unified', legend=dict(orientation='h', y=-0.15),
+                      margin=dict(t=40, b=10))
+    return fig
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# TAB 3: DEMAND EXPLORER
-# ═══════════════════════════════════════════════════════════════════════
-with tab3:
-    st.header("📈 Demand Explorer — Multi-Tier Hierarchy Drill-Down")
-    
-    col_sel1, col_sel2 = st.columns(2)
-    with col_sel1:
-        sel_family = st.selectbox("1. Select Product Family", families, key="explorer_family")
-    
-    family_skus = sorted(filtered_train[filtered_train['Product_Family'] == sel_family]['SKU_ID'].unique().tolist())
-    with col_sel2:
-        sel_sku = st.selectbox("2. Select SKU ID", family_skus if family_skus else ['N/A'], key="explorer_sku")
-    
-    if sel_sku != 'N/A':
-        sku_data = filtered_train[filtered_train['SKU_ID'] == sel_sku]
-        sku_region = sku_data.groupby(['Date', 'Region'])['Units_Sold'].sum().reset_index()
-        fig_sku = px.line(sku_region, x='Date', y='Units_Sold', color='Region',
-                          title=f'{sel_sku} — Monthly Demand by Region', markers=True)
-        fig_sku.update_layout(height=360)
-        st.plotly_chart(fig_sku, use_container_width=True)
-        
-        col_a, col_b = st.columns(2)
-        with col_a:
-            sku_seasonal = sku_data.groupby(['Year', 'Month'])['Units_Sold'].sum().reset_index()
-            pivot = sku_seasonal.pivot(index='Year', columns='Month', values='Units_Sold').fillna(0)
-            fig_heat = px.imshow(pivot, labels=dict(x="Month", y="Year", color="Units Sold"),
-                                title=f'{sel_sku} — Seasonality Grid', color_continuous_scale='Blues')
-            st.plotly_chart(fig_heat, use_container_width=True)
-        with col_b:
-            st.markdown("#### SKU Metadata & Intermittency")
-            total_m = sku_data['Date'].nunique()
-            zero_m = int((sku_data['Units_Sold'] == 0).sum())
-            c1, c2 = st.columns(2)
-            c1.metric("Active Months", total_m)
-            c2.metric("Zero Demand Months", f"{zero_m} ({100*zero_m/max(total_m, 1):.1f}%)")
-            
-            meta_cols = ['SKU_Description', 'Size_Class', 'Powertrain_Application', 'Lifecycle_Status', 'Launch_Date', 'EOL_Date']
-            meta_info = {c: str(sku_data[c].iloc[0]) for c in meta_cols if c in sku_data.columns and len(sku_data) > 0}
-            st.json(meta_info)
+tabs = st.tabs(['Executive overview', 'Data health', 'Demand explorer', 'Anomaly monitor', 'Forecast & accuracy',
+                'Macro drivers', 'Lifecycle & launches', 'What-if', 'Procurement (P90)', 'Stockouts & exceptions',
+                'Downloads'])
 
+# ════════════════════════════════════════════════════════════════════
+# 1 EXECUTIVE OVERVIEW
+# ════════════════════════════════════════════════════════════════════
+with tabs[0]:
+    st.subheader('Executive overview')
+    last19 = T[T['Date'] > '2025-03']
+    c = st.columns(5)
+    c[0].metric('19-mo forecast (units)', f"{F['Units_Sold_Forecast'].sum():,.0f}",
+                f"{(F['Units_Sold_Forecast'].sum() / max(last19['Unconstrained_Demand'].sum(), 1) - 1) * 100:+.1f}% vs last 19 mo")
+    c[1].metric('19-mo forecast revenue', f"${F['Revenue_Forecast_USD'].sum() / 1e6:,.1f}M",
+                f"{(F['Revenue_Forecast_USD'].sum() / max((last19['Unconstrained_Demand'] * last19['Unit_Price_USD']).sum(), 1) - 1) * 100:+.1f}%")
+    c[2].metric('P10 – P90 (units)', f"{F['Forecast_P10'].sum() / 1e6:.2f}M – {F['Forecast_P90'].sum() / 1e6:.2f}M")
+    c[3].metric('History units 2019-26', f"{T['Units_Sold'].sum() / 1e6:,.2f}M")
+    c[4].metric('Lost to stockouts (history)', f"{T['Lost_Units'].sum():,.0f}")
+    mode = st.radio('Measure', ['Units', 'Revenue (USD)'], horizontal=True)
+    chart(st, timeline(T, F, 'units' if mode == 'Units' else 'rev'), use_container_width=True)
+    st.markdown('**Mix: last 12 months of history vs first 12 months of forecast**')
+    cols = st.columns(3)
+    for col_, dim in zip(cols, ['Product_Family', 'Region', 'Sales_Channel']):
+        a = T[T['Date'] > '2025-10'].groupby(dim)['Unconstrained_Demand'].sum().rename('History (12 mo)')
+        b = F[F['Date'] <= '2027-10'].groupby(dim)['Units_Sold_Forecast'].sum().rename('Forecast (12 mo)')
+        mix = pd.concat([a, b], axis=1).fillna(0).reset_index().melt(id_vars=dim, var_name='Period', value_name='Units')
+        chart(col_, px.bar(mix, y=dim, x='Units', color='Period', barmode='group', orientation='h', height=380,
+                                 color_discrete_sequence=[UNC_C, FC_C]).update_layout(legend=dict(orientation='h', y=-0.2),
+                                                                                       margin=dict(t=10)),
+                          use_container_width=True)
 
-# ═══════════════════════════════════════════════════════════════════════
-# TAB 4: ANOMALY MONITOR
-# ═══════════════════════════════════════════════════════════════════════
-with tab4:
-    st.header("⚠️ Anomaly Monitor & Event Log")
-    
-    if anomalies is not None and len(anomalies) > 0:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Anomalies Logged", f"{len(anomalies):,}")
-        c2.metric("Supply Bottlenecks (Stockouts)", int((anomalies['Anomaly_Type'] == 'Supply Constraint / Stockout').sum()))
-        c3.metric("Statistical Outliers (IQR)", int((anomalies['Anomaly_Type'] == 'Statistical Outlier (IQR)').sum()))
-        
-        st.divider()
-        anom_types = anomalies['Anomaly_Type'].dropna().unique().tolist()
-        sel_types = st.multiselect("Filter by Anomaly Category", anom_types, default=anom_types)
-        f_anom = anomalies[anomalies['Anomaly_Type'].isin(sel_types)]
-        
-        anom_counts = f_anom['Anomaly_Type'].value_counts().reset_index()
-        anom_counts.columns = ['Category', 'Count']
-        fig_anom = px.bar(anom_counts, x='Category', y='Count', color='Category', title='Anomalies by Classification')
-        fig_anom.update_layout(height=320, showlegend=False)
-        st.plotly_chart(fig_anom, use_container_width=True)
-        
-        st.subheader("Anomaly Register Entries")
-        st.dataframe(f_anom.head(500), use_container_width=True, hide_index=True)
+# ════════════════════════════════════════════════════════════════════
+# 2 DATA HEALTH
+# ════════════════════════════════════════════════════════════════════
+with tabs[1]:
+    st.subheader('Data health — issues found, rows affected, before vs after')
+    Q = D['quality']
+    iss = pd.DataFrame(Q['issues'])
+    ba = Q['before_after']
+    c = st.columns(5)
+    c[0].metric('Train rows', f"{ba['train_rows_clean']:,}", f"{ba['train_rows_clean'] - ba['train_rows_raw']:,} vs raw {ba['train_rows_raw']:,}")
+    c[1].metric('Region labels', f"{ba['regions'][1]}", f"from {ba['regions'][0]} variants", delta_color='off')
+    c[2].metric('Customer labels', f"{ba['customers'][1]}", f"from {ba['customers'][0]} variants", delta_color='off')
+    c[3].metric('SKU codes', f"{ba['skus'][1]}", f"from {ba['skus'][0]} variants", delta_color='off')
+    c[4].metric('Units × price = revenue', '100%', f"from {ba['units_x_price_eq_revenue_pct'][0]:.1f}%")
+    kinds = st.multiselect('Classification', sorted(iss['classification'].unique()), default=sorted(iss['classification'].unique()))
+    v = iss[iss['classification'].isin(kinds) & (iss['rows_affected'] > 0)]
+    chart(st, px.bar(v.sort_values('rows_affected'), x='rows_affected', y='issue_type', color='file', orientation='h',
+                           log_x=True, height=650, hover_data=['action', 'classification'],
+                           labels={'rows_affected': 'Rows affected (log scale)', 'issue_type': ''}), use_container_width=True)
+    st.dataframe(v[['file', 'issue_type', 'classification', 'rows_affected', 'action']], use_container_width=True, hide_index=True)
+    st.caption('Error = fixed in the pipeline. Real event = kept and modelled or excluded. Missing data = left missing, never zero. '
+               'Row-level fix log (old → new per Record_ID): reports/data_quality_issues.csv')
+
+# ════════════════════════════════════════════════════════════════════
+# 3 DEMAND EXPLORER
+# ════════════════════════════════════════════════════════════════════
+with tabs[2]:
+    st.subheader('Demand explorer — family → SKU → region → customer')
+    c = st.columns(4)
+    fam = c[0].selectbox('Family', ['All'] + sorted(T['Product_Family'].unique()))
+    t1 = T if fam == 'All' else T[T['Product_Family'] == fam]
+    sku = c[1].selectbox('SKU', ['All'] + sorted(t1['SKU_ID'].unique()))
+    t2 = t1 if sku == 'All' else t1[t1['SKU_ID'] == sku]
+    reg = c[2].selectbox('Region', ['All'] + sorted(t2['Region'].unique()))
+    t3 = t2 if reg == 'All' else t2[t2['Region'] == reg]
+    cus = c[3].selectbox('Customer', ['All'] + sorted(t3['Customer_Name'].unique()))
+    t4 = t3 if cus == 'All' else t3[t3['Customer_Name'] == cus]
+    f4 = F
+    for col_, val in [('Product_Family', fam), ('SKU_ID', sku), ('Region', reg), ('Customer_Name', cus)]:
+        if val != 'All':
+            f4 = f4[f4[col_] == val]
+    chart(st, timeline(t4, f4), use_container_width=True)
+    a, b = st.columns([3, 2])
+    s = t4.groupby(['Year', 'Month'])['Unconstrained_Demand'].sum().unstack()
+    chart(a, px.imshow(s, aspect='auto', color_continuous_scale='Blues', title='Seasonality (units by year × month)',
+                             labels=dict(color='Units')).update_layout(height=340), use_container_width=True)
+    z = t4.assign(zero=t4['Units_Sold'].eq(0)).groupby('Month')['zero'].mean().mul(100)
+    chart(b, px.bar(z, title='Zero-order months (% of rows) by calendar month', labels={'value': '%', 'Month': ''},
+                          height=340).update_layout(showlegend=False), use_container_width=True)
+    if sku != 'All':
+        info = D['sku'][D['sku']['SKU_ID'] == sku].T.rename(columns=lambda _: 'value')
+        ic = D['ic'][D['ic']['SKU_ID'] == sku]
+        a, b = st.columns(2)
+        a.markdown('**Lifecycle (sku_master)**')
+        a.dataframe(info, use_container_width=True)
+        b.markdown('**Demand class & ordering cycle by region (last 24 months)**')
+        b.dataframe(ic.drop(columns='SKU_ID'), use_container_width=True, hide_index=True)
+
+# ════════════════════════════════════════════════════════════════════
+# 4 ANOMALY MONITOR
+# ════════════════════════════════════════════════════════════════════
+with tabs[3]:
+    st.subheader('Anomaly monitor — errors vs real events, with action taken')
+    A = filt(anom)
+    types = sorted(A['Anomaly_Type'].unique())
+    sel = st.multiselect('Anomaly type', types, default=[t for t in types if t != 'Missing row'])
+    A = A[A['Anomaly_Type'].isin(sel)]
+    c = st.columns(4)
+    for i, (k, v) in enumerate(A['Classification'].value_counts().items()):
+        c[i % 4].metric(k, f'{v:,}')
+    level = st.radio('Series', ['Total (filtered)', 'One SKU-region'], horizontal=True)
+    if level == 'One SKU-region':
+        opts = A[A['SKU_ID'] != 'ALL'].groupby(['SKU_ID', 'Region']).size().sort_values(ascending=False).index.tolist()
+        if opts:
+            s_, r_ = st.selectbox('SKU-region (most flags first)', opts, format_func=lambda x: f'{x[0]} · {x[1]}')
+            hist = T[(T['SKU_ID'] == s_) & (T['Region'] == r_)].set_index('Date')
+            pts = A[(A['SKU_ID'] == s_) & (A['Region'] == r_)]
+            fig = go.Figure([go.Scatter(x=hist.index, y=hist['Units_Sold'], name='Shipped', line=dict(color=HIST_C)),
+                             go.Scatter(x=hist.index, y=hist['Unconstrained_Demand'], name='Unconstrained', line=dict(color=UNC_C, dash='dot'))])
+            for t_, g in pts.groupby('Anomaly_Type'):
+                fig.add_trace(go.Scatter(x=g['Date'], y=hist['Units_Sold'].reindex(g['Date']), mode='markers', name=t_,
+                                         marker=dict(size=11, symbol='diamond'), text=g['Reason'] + ' → ' + g['Action']))
+            chart(st, fig.update_layout(height=420, hovermode='closest'), use_container_width=True)
     else:
-        st.info("Anomaly register not found.")
+        hist = T.groupby('Date')[['Units_Sold', 'Unconstrained_Demand']].sum()
+        cnt = A.groupby(['Date', 'Anomaly_Type']).size().rename('Flags').reset_index()
+        fig = go.Figure([go.Scatter(x=hist.index, y=hist['Units_Sold'], name='Shipped', line=dict(color=HIST_C)),
+                         go.Scatter(x=hist.index, y=hist['Unconstrained_Demand'], name='Unconstrained', line=dict(color=UNC_C, dash='dot'))])
+        for t_, g in cnt.groupby('Anomaly_Type'):
+            fig.add_trace(go.Scatter(x=g['Date'], y=hist['Units_Sold'].reindex(g['Date']), mode='markers', name=t_,
+                                     marker=dict(size=np.clip(np.sqrt(g['Flags']) * 3, 6, 22)), text=g['Flags'].astype(str) + ' flags'))
+        chart(st, fig.update_layout(height=420, hovermode='closest'), use_container_width=True)
+    st.dataframe(A[['Date', 'SKU_ID', 'Region', 'Customer_Name', 'Anomaly_Type', 'Classification', 'Units_Sold',
+                    'Unconstrained_Demand', 'Expected_Level', 'Reason', 'Action']].sort_values('Date'),
+                 use_container_width=True, hide_index=True, height=320)
 
+# ════════════════════════════════════════════════════════════════════
+# 5 FORECAST & ACCURACY
+# ════════════════════════════════════════════════════════════════════
+with tabs[4]:
+    st.subheader('Forecast & accuracy — rolling-origin backtest, 19-month horizon')
+    ov = pd.DataFrame(M['overall']).T.rename_axis('Model').reset_index()
+    ov['WAPE vs seasonal naive'] = (1 - ov['wape'] / ov.loc[ov['Model'] == 'Seasonal_Naive', 'wape'].iat[0]).map('{:+.1%}'.format)
+    a, b = st.columns([2, 3])
+    a.dataframe(ov, hide_index=True, use_container_width=True)
+    a.caption(f"Origins {', '.join(M['folds'])} — each forecasts the next 19 months using only data up to the origin. "
+              f"Target: stockout-corrected demand. P10–P90 coverage: {M['interval_P10_P90_coverage']:.0%} (target 80%). "
+              f"Aggregate WAPE: {', '.join(f'{k} {v:.3f}' for k, v in M['aggregate_level_wape'].items())}.")
+    hz = B.groupby('Horizon').apply(lambda g: pd.Series({
+        m: (g['Actual'] - g[m]).abs().sum() / max(g['Actual'].sum(), 1) for m in ['LightGBM_P50', 'Seasonal_Naive', 'Moving_Avg_12m', 'Croston_SBA']}))
+    chart(b, px.line(hz, markers=True, title='WAPE by horizon (filtered)', labels={'value': 'WAPE', 'variable': ''},
+                           height=330), use_container_width=True)
+    a, b = st.columns(2)
+    for col_, dim in [(a, 'Product_Family'), (b, 'Region')]:
+        g = B.groupby(dim).apply(lambda g: pd.Series({'WAPE': (g['Actual'] - g['LightGBM_P50']).abs().sum() / g['Actual'].sum(),
+                                                      'Bias': (g['LightGBM_P50'] - g['Actual']).sum() / g['Actual'].sum()})).reset_index()
+        chart(col_, px.bar(g.melt(id_vars=dim), x=dim, y='value', color='variable', barmode='group', height=330,
+                                 title=f'WAPE and bias by {dim.replace("_", " ").lower()}'), use_container_width=True)
+    agg = B.groupby(['Origin', 'Date'])[['Actual', 'LightGBM_P50', 'P10', 'P90', 'Seasonal_Naive']].sum().reset_index()
+    fig = go.Figure()
+    for o, g in agg.groupby('Origin'):
+        fig.add_trace(go.Scatter(x=list(g['Date']) + list(g['Date'][::-1]), y=list(g['P90']) + list(g['P10'][::-1]),
+                                 fill='toself', fillcolor=BAND_C, line=dict(width=0), showlegend=False))
+        fig.add_trace(go.Scatter(x=g['Date'], y=g['LightGBM_P50'], name=f'P50 from {o}', line=dict(color=FC_C)))
+        fig.add_trace(go.Scatter(x=g['Date'], y=g['Seasonal_Naive'], name=f'Seasonal naive from {o}', line=dict(color='#a0aec0', dash='dot')))
+    hist = T.groupby('Date')['Unconstrained_Demand'].sum()
+    fig.add_trace(go.Scatter(x=hist.index, y=hist, name='Actual (unconstrained)', line=dict(color='#16a34a', width=2)))
+    fig.add_trace(go.Scatter(x=F.groupby('Date')['Units_Sold_Forecast'].sum().index, y=F.groupby('Date')['Units_Sold_Forecast'].sum(),
+                             name='Final forecast', line=dict(color=FC_C, width=3)))
+    chart(st, fig.update_layout(title='Backtest forecasts vs actuals, then the final forecast', height=440,
+                                      xaxis_range=['2022-06', '2028-05']), use_container_width=True)
+    a, b = st.columns(2)
+    imp = D['imp'].head(20).iloc[::-1]
+    chart(a, px.bar(imp, x='importance', y='feature', orientation='h', height=480, title='Top-20 drivers (gain)'),
+                   use_container_width=True)
+    H_ = D['hier']
+    lv = b.selectbox('Hierarchy level (bottom-up, adds up exactly)', H_['Level'].unique().tolist(), index=1)
+    hh = H_[H_['Level'] == lv].pivot_table(index='Node', values=['Bottom_Up_Sum', 'Forecast_P10', 'Forecast_P90'], aggfunc='sum')
+    b.dataframe(hh.sort_values('Bottom_Up_Sum', ascending=False), use_container_width=True)
+    b.caption('Forecasts are produced at SKU × region × month and summed, so every level is coherent by construction. '
+              'Sums of P10/P90 overstate the aggregate range (errors partly cancel).')
 
-# ═══════════════════════════════════════════════════════════════════════
-# TAB 5: FORECAST & ACCURACY
-# ═══════════════════════════════════════════════════════════════════════
-with tab5:
-    st.header("🎯 Forecast & Backtest Validation")
-    
-    if model_metrics:
-        ens_m = model_metrics.get('blended_ensemble', model_metrics.get('lightgbm', {}))
-        ind_m = model_metrics.get('individual_models', {})
-        lgb_m = ind_m.get('lightgbm', model_metrics.get('lightgbm', {}))
-        cat_m = ind_m.get('catboost', {})
-        base = model_metrics.get('baselines', {})
-        sn = base.get('seasonal_naive', {})
-        ma = base.get('moving_average_6m', {})
-        
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Blended Ensemble WAPE", f"{ens_m.get('wape', 0):.4f}", delta=f"-{(sn.get('wape', 0.4163) - ens_m.get('wape', 0.3058))/sn.get('wape', 0.4163)*100:.1f}% vs Naïve", delta_color="inverse")
-        c2.metric("Ensemble Bias", f"{ens_m.get('bias', 0):.4f}", help="Near zero indicates perfectly calibrated forecast")
-        c3.metric("CatBoost WAPE", f"{cat_m.get('wape', 0.3000):.4f}", delta="-27.9% vs Naïve", delta_color="inverse")
-        c4.metric("Seasonal Naïve WAPE", f"{sn.get('wape', 0):.4f}")
-        
-        comp_df = pd.DataFrame({
-            'Model': ['Seasonal Naïve (Lag-12)', '6-Month Moving Average', 'LightGBM Regressor', 'CatBoost Regressor', 'Blended Ensemble (Final)'],
-            'WAPE (Lower is Better)': [sn.get('wape', 0.4163), ma.get('wape', 0.5369), lgb_m.get('wape', 0.3157), cat_m.get('wape', 0.3000), ens_m.get('wape', 0.3058)],
-            'Bias': [sn.get('bias', 0.0190), ma.get('bias', -0.0311), lgb_m.get('bias', 0.0102), cat_m.get('bias', -0.0432), ens_m.get('bias', -0.0130)]
-        })
-        fig_comp = px.bar(comp_df, x='Model', y='WAPE (Lower is Better)', color='Model',
-                          title='Model Performance Benchmark — Backtest WAPE', text_auto='.4f',
-                          color_discrete_sequence=['#7f7f7f', '#aec7e8', '#1f77b4', '#9467bd', '#2ca02c'])
-        fig_comp.update_layout(height=320, showlegend=False)
-        st.plotly_chart(fig_comp, use_container_width=True)
-        
-    if backtest is not None:
-        st.subheader("Backtest Monthly Trajectory (Actual vs Models)")
-        agg_dict_bt = {
-            'Actual': ('Units_Sold', 'sum'),
-            'Ensemble': ('Pred_Ensemble', 'sum') if 'Pred_Ensemble' in backtest.columns else ('Pred_LGB', 'sum'),
-            'LightGBM': ('Pred_LGB', 'sum'),
-            'Seasonal_Naive': ('Pred_SeasNaive', 'sum')
-        }
-        if 'Pred_CatBoost' in backtest.columns:
-            agg_dict_bt['CatBoost'] = ('Pred_CatBoost', 'sum')
-            
-        bt_m = backtest.groupby('Date').agg(**agg_dict_bt).reset_index().sort_values('Date')
-        
-        fig_bt = go.Figure()
-        fig_bt.add_trace(go.Scatter(x=bt_m['Date'], y=bt_m['Actual'], name='Actual Deliveries', mode='lines+markers', line=dict(color='black', width=2.5)))
-        fig_bt.add_trace(go.Scatter(x=bt_m['Date'], y=bt_m['Ensemble'], name='Blended Ensemble (Final)', mode='lines+markers', line=dict(color='#2ca02c', width=2.5)))
-        fig_bt.add_trace(go.Scatter(x=bt_m['Date'], y=bt_m['LightGBM'], name='LightGBM', mode='lines', line=dict(color='#1f77b4', dash='dash')))
-        if 'CatBoost' in bt_m.columns:
-            fig_bt.add_trace(go.Scatter(x=bt_m['Date'], y=bt_m['CatBoost'], name='CatBoost', mode='lines', line=dict(color='#9467bd', dash='dot')))
-        fig_bt.add_trace(go.Scatter(x=bt_m['Date'], y=bt_m['Seasonal_Naive'], name='Seasonal Naïve', mode='lines', line=dict(dash='dot', color='#aec7e8')))
-        fig_bt.update_layout(height=380, hovermode='x unified')
-        st.plotly_chart(fig_bt, use_container_width=True)
+# ════════════════════════════════════════════════════════════════════
+# 6 MACRO DRIVERS
+# ════════════════════════════════════════════════════════════════════
+with tabs[5]:
+    st.subheader('Macro lead/lag — which indicator leads which family, and is it stable?')
+    lag = D['lag']
+    ind = st.selectbox('Indicator', sorted(lag['Indicator'].unique()), index=sorted(lag['Indicator'].unique()).index('New_Vehicle_Orders_Index'))
+    hm = lag[lag['Indicator'] == ind].pivot(index='Product_Family', columns='Lag', values='Corr')
+    chart(st, px.imshow(hm, color_continuous_scale='RdBu', zmin=-1, zmax=1, aspect='auto', text_auto='.2f',
+                              title=f'Correlation of family demand YoY with {ind} (12-mo change) led by k months',
+                              labels=dict(x='Lead (months)', y='', color='r')).update_layout(height=380), use_container_width=True)
+    a, b = st.columns(2)
+    stb = D['stab'][D['stab']['Indicator'] == ind].pivot(index='Product_Family', columns='Period', values=['Best_Lag', 'Corr'])
+    a.markdown('**Lag stability: best lead in 2020-22 vs 2023-26**')
+    a.dataframe(stb, use_container_width=True)
+    ev = D['ev'].copy()
+    ev['Index'] = ev.groupby('Powertrain')['Units'].transform(lambda s: s / s.iloc[:12].mean() * 100)
+    ev['Index'] = ev.groupby('Powertrain')['Index'].transform(lambda s: s.rolling(12).mean())
+    fig = px.line(ev, x='Date', y='Index', color='Powertrain', title='EV transition: demand index (12-mo avg, 2019 = 100)', height=360)
+    fig.add_trace(go.Scatter(x=ev['Date'].unique(), y=ev.groupby('Date')['EV_Adoption_Index'].first(), name='EV adoption index',
+                             line=dict(dash='dot', color='green')))
+    chart(b, fig, use_container_width=True)
 
-    # Hierarchical Reconciliation Status Card
-    st.subheader("Hierarchical Reconciliation & Mathematical Coherence")
-    st.markdown("Verifying that SKU-level forecasts aggregate consistently into Product Family and Regional financial totals.")
-    c_h1, c_h2, c_h3 = st.columns(3)
-    c_h1.metric("SKU Level Bottom-Up Sum", "2,657,218 units")
-    c_h2.metric("Family / Region Reconciled Sum", "2,657,218 units")
-    c_h3.metric("Reconciliation Coherence", "100.0% (Zero Gap)", delta="Coherent across all levels")
-        
-    if feat_imp is not None:
-        st.subheader("Key Demand Drivers (LightGBM Feature Importance)")
-        top_f = feat_imp.head(20)
-        fig_f = px.bar(top_f, x='importance', y='feature', orientation='h', title='Top 20 Predictive Features (Split Gain)')
-        fig_f.update_layout(height=450, yaxis=dict(autorange='reversed'))
-        st.plotly_chart(fig_f, use_container_width=True)
+# ════════════════════════════════════════════════════════════════════
+# 7 LIFECYCLE
+# ════════════════════════════════════════════════════════════════════
+with tabs[6]:
+    st.subheader('Lifecycle — EOL phase-outs and new launches (Replaces_SKU)')
+    sk = D['sku']
+    c = st.columns(4)
+    for i, s in enumerate(['Active', 'EOL Announced', 'Discontinued', 'Planned Launch']):
+        c[i].metric(s, int((sk['Lifecycle_Status'] == s).sum()))
+    pairs = sk[sk['Replaces_SKU'].notna()][['SKU_ID', 'Replaces_SKU', 'Launch_Date', 'Lifecycle_Status']]
+    pairs['Predecessor_EOL'] = pairs['Replaces_SKU'].map(sk.set_index('SKU_ID')['EOL_Date'])
+    st.dataframe(pairs.sort_values('Launch_Date'), hide_index=True, use_container_width=True)
+    pick = st.selectbox('Transition', pairs.sort_values('Launch_Date', ascending=False).apply(lambda r: f"{r['Replaces_SKU']} → {r['SKU_ID']}", axis=1))
+    old, new = pick.split(' → ')
+    fig = go.Figure()
+    for s_, col_ in [(old, HIST_C), (new, UNC_C)]:
+        h = train[train['SKU_ID'] == s_].groupby('Date')['Unconstrained_Demand'].sum()
+        f = fc[fc['SKU_ID'] == s_].groupby('Date')['Units_Sold_Forecast'].sum()
+        fig.add_trace(go.Scatter(x=h.index, y=h, name=f'{s_} history', line=dict(color=col_)))
+        if len(f):
+            fig.add_trace(go.Scatter(x=f.index, y=f, name=f'{s_} forecast', line=dict(color=col_, dash='dash', width=3)))
+    fig.add_vline(x=SPLIT, line_dash='dash', line_color='grey')
+    chart(st, fig.update_layout(height=400, xaxis_range=['2020-01', '2028-05']), use_container_width=True)
+    r = D['ramp'].groupby('k')['ratio'].agg(['median', 'min', 'max']).reset_index()
+    chart(st, px.line(r, x='k', y=['median', 'min', 'max'], markers=True, height=320,
+                            title='Launch ramp learned from 6 historical successors (successor ÷ predecessor per-region level)',
+                            labels={'k': 'Months since launch', 'value': 'Ratio'}), use_container_width=True)
 
+# ════════════════════════════════════════════════════════════════════
+# 8 WHAT-IF
+# ════════════════════════════════════════════════════════════════════
+with tabs[7]:
+    st.subheader('What-if — re-run the forecast model under a macro scenario')
+    model, feats, X = load_model()
+    wcols = {c: c for c in feats if c.startswith('w_')}
+    names = {'w_ISM_Manu': 'PMI (points)', 'w_New_Vehi': 'New vehicle orders index (points)',
+             'w_Auto_Prod': 'Auto production YoY (pp)', 'w_Vehicle_Inve': 'Vehicle inventory days',
+             'w_Raw_Mate': 'Raw-material cost index', 'w_Industrial_Util': 'Industrial utilisation (pp)',
+             'w_Fuel_Pric': 'Fuel price index', 'w_EV_Adop': 'EV adoption index'}
+    c = st.columns(4)
+    deltas = {}
+    for i, (k, lab) in enumerate(names.items()):
+        if k in wcols:
+            deltas[k] = c[i % 4].slider(lab, -15.0, 15.0, -3.0 if k == 'w_ISM_Manu' else 0.0, 0.5)
+    start = st.select_slider('Shock starts in', options=sorted(X['Date'].unique()), value='2026-11')
+    Xs = X.copy()
+    for col_ in ['Product_Family', 'Region', 'Sales_Channel', 'Customer_Name', 'Powertrain_Application', 'Size_Class']:
+        Xs[col_] = Xs[col_].astype('category')
+    shock = Xs['Date'] >= start
+    for k, v in deltas.items():
+        Xs.loc[shock, k] = Xs.loc[shock, k] + v
+    if deltas.get('w_EV_Adop'):
+        sign = Xs['Powertrain_Application'].astype(str).map({'EV': 1.0, 'ICE': -1.0}).fillna(0)
+        Xs.loc[shock, 'ev_x_powertrain'] += sign[shock] * deltas['w_EV_Adop']
+    base = X['Raw_Model'] * X['_scale'] * X['Adj_Factor']
+    scen = np.clip(model.predict(Xs[feats]), 0, None) * X['_scale'] * X['Adj_Factor']
+    R = X[['Date', 'SKU_ID', 'Region', 'Product_Family', 'Customer_Name', 'Sales_Channel']].assign(Base=base, Scenario=scen)
+    R = filt(R)
+    m_ = R.groupby('Date')[['Base', 'Scenario']].sum()
+    c = st.columns(3)
+    c[0].metric('Baseline 19-mo units', f"{m_['Base'].sum():,.0f}")
+    c[1].metric('Scenario 19-mo units', f"{m_['Scenario'].sum():,.0f}", f"{(m_['Scenario'].sum() / m_['Base'].sum() - 1) * 100:+.1f}%")
+    fam_ = R.groupby('Product_Family')[['Base', 'Scenario']].sum()
+    c[2].metric('Most sensitive family', (fam_['Scenario'] / fam_['Base'] - 1).abs().idxmax())
+    fig = go.Figure([go.Scatter(x=m_.index, y=m_['Base'], name='Baseline', line=dict(color=FC_C, width=3)),
+                     go.Scatter(x=m_.index, y=m_['Scenario'], name='Scenario', line=dict(color='#c53030', dash='dash', width=3))])
+    chart(st, fig.update_layout(height=380), use_container_width=True)
+    st.dataframe((fam_['Scenario'] / fam_['Base'] - 1).rename('Impact').map('{:+.1%}'.format), use_container_width=True)
+    st.caption('The trained model is re-scored with shifted driver features; lifecycle/event adjustments are kept. '
+               'Effects are what the model learned from 2019-2026, not causal guarantees.')
 
-# ═══════════════════════════════════════════════════════════════════════
-# TAB 6: MACRO HEATMAP
-# ═══════════════════════════════════════════════════════════════════════
-with tab6:
-    st.header("🌍 Macroeconomic Indicator Lead/Lag Correlation Heatmap")
-    
-    if macro is not None:
-        macro_cols = ['ISM_Manufacturing_PMI', 'Auto_Production_YoY_Pct', 'Vehicle_Inventory_Days',
-                      'Raw_Material_Cost_Index', 'New_Vehicle_Orders_Index', 'Industrial_Util_Rate_Pct',
-                      'Fuel_Price_Index', 'EV_Adoption_Index']
-        
-        fam_demand = filtered_train.groupby(['Date', 'Product_Family'])['Units_Sold'].sum().reset_index()
-        lags = list(range(0, 7))
-        hm_records = []
-        
-        sel_fam_macro = st.selectbox("Select Product Family for Correlation Analysis", sorted(fam_demand['Product_Family'].unique()), key="macro_fam_sel")
-        fam_ts = fam_demand[fam_demand['Product_Family'] == sel_fam_macro].sort_values('Date')
-        merged = fam_ts.merge(macro[['Date'] + macro_cols], on='Date', how='left')
-        
-        for indicator in macro_cols:
-            for lag in lags:
-                shifted = merged[indicator].shift(lag) if lag > 0 else merged[indicator]
-                corr = merged['Units_Sold'].corr(shifted)
-                hm_records.append({
-                    'Indicator': indicator.replace('_', ' '),
-                    'Lag_Months': lag,
-                    'Correlation': round(corr, 3) if pd.notna(corr) else 0.0
-                })
-        
-        hm_df = pd.DataFrame(hm_records)
-        pivot_hm = hm_df.pivot(index='Indicator', columns='Lag_Months', values='Correlation')
-        fig_hm = px.imshow(pivot_hm, labels=dict(x="Lead Lag (Months)", y="Macro Indicator", color="Correlation"),
-                           title=f'{sel_fam_macro} — Macro Indicator Lead/Lag Heatmap',
-                           color_continuous_scale='RdBu_r', zmin=-1, zmax=1, text_auto='.2f')
-        fig_hm.update_layout(height=420)
-        st.plotly_chart(fig_hm, use_container_width=True)
+# ════════════════════════════════════════════════════════════════════
+# 9 PROCUREMENT
+# ════════════════════════════════════════════════════════════════════
+with tabs[8]:
+    st.subheader('Procurement plan — plan to P50, buffer to P90')
+    horizon = st.slider('Planning window (months)', 1, 19, 6)
+    w = F[F['Date'] <= sorted(F['Date'].unique())[horizon - 1]]
+    p = w.groupby('SKU_ID').agg(Family=('Product_Family', 'first'), P50=('Units_Sold_Forecast', 'sum'),
+                                P90=('Forecast_P90', 'sum'), Price=('Unit_Price_USD', 'mean')).reset_index()
+    p['Buffer_Units'] = p['P90'] - p['P50']
+    p['Buffer_Value_USD'] = (p['Buffer_Units'] * p['Price']).round(0)
+    c = st.columns(3)
+    c[0].metric('Plan (P50) units', f"{p['P50'].sum():,.0f}")
+    c[1].metric('Buffer to P90 (units)', f"{p['Buffer_Units'].sum():,.0f}")
+    c[2].metric('Buffer value', f"${p['Buffer_Value_USD'].sum() / 1e6:,.2f}M")
+    m_ = w.groupby(['Date', 'Product_Family'])[['Units_Sold_Forecast', 'Forecast_P90']].sum().reset_index()
+    chart(st, px.bar(m_, x='Date', y='Forecast_P90', color='Product_Family', height=360,
+                           title='Monthly P90 requirement by family'), use_container_width=True)
+    st.dataframe(p.sort_values('Buffer_Value_USD', ascending=False), hide_index=True, use_container_width=True)
+    st.download_button('Download procurement plan (CSV)', p.to_csv(index=False), 'procurement_plan.csv')
 
+# ════════════════════════════════════════════════════════════════════
+# 10 STOCKOUTS & EXCEPTIONS
+# ════════════════════════════════════════════════════════════════════
+with tabs[9]:
+    st.subheader('Stockouts & lost sales')
+    so = T[T['Is_Stockout'] | (T['Lost_Units'] > 0)]
+    c = st.columns(3)
+    c[0].metric('Constrained SKU-region-months', f'{len(so):,}')
+    c[1].metric('Lost units (demand − shipped)', f"{so['Lost_Units'].sum():,.0f}")
+    c[2].metric('Lost revenue', f"${(so['Lost_Units'] * so['Unit_Price_USD']).sum() / 1e6:,.1f}M")
+    a, b = st.columns(2)
+    lm = so.groupby(['Date', 'Product_Family'])['Lost_Units'].sum().reset_index()
+    chart(a, px.area(lm, x='Date', y='Lost_Units', color='Product_Family', height=340, title='Lost units by month'),
+                   use_container_width=True)
+    rs = so.groupby(so['Reason'].fillna('Unlisted (chip shortage estimate)'))['Lost_Units'].sum().reset_index()
+    chart(b, px.pie(rs, names='Reason', values='Lost_Units', height=340, title='Lost units by cause'), use_container_width=True)
 
-# ═══════════════════════════════════════════════════════════════════════
-# TAB 7: LIFECYCLE VIEW
-# ═══════════════════════════════════════════════════════════════════════
-with tab7:
-    st.header("📋 SKU Lifecycle & Powertrain Transition")
-    
-    if sku_master is not None:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Active Catalog SKUs", int((sku_master['Lifecycle_Status'] == 'Active').sum()))
-        c2.metric("EOL Announced", int((sku_master['Lifecycle_Status'] == 'EOL Announced').sum()))
-        c3.metric("Discontinued", int((sku_master['Lifecycle_Status'] == 'Discontinued').sum()))
-        c4.metric("Planned Launches", int((sku_master['Lifecycle_Status'] == 'Planned Launch').sum()))
-        
-        col_l1, col_l2 = st.columns(2)
-        with col_l1:
-            pt_fig = px.bar(sku_master.groupby(['Product_Family', 'Powertrain_Application']).size().reset_index(name='SKU Count'),
-                            x='Product_Family', y='SKU Count', color='Powertrain_Application',
-                            title='Powertrain Architecture Mix (ICE vs EV vs Universal)')
-            pt_fig.update_layout(height=360)
-            st.plotly_chart(pt_fig, use_container_width=True)
-        with col_l2:
-            lc_fig = px.bar(sku_master.groupby(['Product_Family', 'Lifecycle_Status']).size().reset_index(name='SKU Count'),
-                            x='Product_Family', y='SKU Count', color='Lifecycle_Status',
-                            title='Lifecycle Status Distribution')
-            lc_fig.update_layout(height=360)
-            st.plotly_chart(lc_fig, use_container_width=True)
-            
-        eol_table = sku_master[sku_master['EOL_Date'].notna() & (sku_master['EOL_Date'] != '')].sort_values('EOL_Date')
-        if len(eol_table) > 0:
-            st.subheader("Upcoming End-of-Life (EOL) Phaseout Catalog")
-            st.dataframe(eol_table[['SKU_ID', 'Product_Family', 'SKU_Description', 'EOL_Date', 'Replaces_SKU', 'Lifecycle_Status']], use_container_width=True, hide_index=True)
+    st.subheader('Exception list for planners')
+    last12 = T[T['Date'] > '2025-10'].groupby(['SKU_ID', 'Region'])['Unconstrained_Demand'].sum()
+    nxt12 = F[F['Date'] <= '2027-10'].groupby(['SKU_ID', 'Region']).agg(
+        Forecast_12m=('Units_Sold_Forecast', 'sum'), P10=('Forecast_P10', 'sum'), P90=('Forecast_P90', 'sum'),
+        Adjustment=('Adjustment', lambda s: '; '.join(sorted(set(s.dropna().str.split(':').str[0])))))
+    ex = nxt12.join(last12.rename('History_12m')).fillna({'History_12m': 0})
+    ex['Change_%'] = (ex['Forecast_12m'] / ex['History_12m'].replace(0, np.nan) - 1) * 100
+    ex['Range_width_%'] = (ex['P90'] - ex['P10']) / ex['Forecast_12m'].replace(0, np.nan) * 100
+    ex['Flag'] = np.select([ex['History_12m'].eq(0), ex['Change_%'].abs() > 30, ex['Range_width_%'] > 150,
+                            ex['Adjustment'].ne('')],
+                           ['New series', 'Large change vs last year', 'Very uncertain', 'Rule-adjusted'], '')
+    ex = ex[ex['Flag'] != ''].reset_index().sort_values('Change_%', key=lambda s: -s.abs())
+    st.dataframe(ex.round(1), hide_index=True, use_container_width=True, height=380)
 
-        st.subheader("New Product Introduction (NPI) & Successor Transition Tracking")
-        st.markdown("Visualizing the ramp-down of phasing-out predecessor SKUs and the corresponding demand ramp-up of successor launches via `Replaces_SKU`.")
-        
-        npi_pairs = [
-            ('PMP-003', 'PMP-020', 'Precision Machined Parts', '2027-06'),
-            ('PTC-005', 'PTC-029', 'Powertrain Components', '2027-03'),
-            ('THM-001', 'THM-012', 'Thermal Management', '2027-10')
-        ]
-        
-        sel_npi = st.selectbox("Select NPI Transition Pair", [f"{p[0]} -> {p[1]} ({p[2]})" for p in npi_pairs])
-        pred_sku = sel_npi.split(' ')[0]
-        succ_sku = sel_npi.split('-> ')[1].split(' ')[0]
-        
-        h_pred = train[train['SKU_ID'] == pred_sku].groupby('Date')['Units_Sold'].sum().reset_index()
-        f_pred = forecast[forecast['SKU_ID'] == pred_sku].groupby('Date')['Units_Sold_Forecast'].sum().reset_index() if forecast is not None else pd.DataFrame()
-        f_succ = forecast[forecast['SKU_ID'] == succ_sku].groupby('Date')['Units_Sold_Forecast'].sum().reset_index() if forecast is not None else pd.DataFrame()
-        
-        fig_npi = go.Figure()
-        if len(h_pred) > 0:
-            fig_npi.add_trace(go.Scatter(x=h_pred['Date'], y=h_pred['Units_Sold'], name=f'{pred_sku} Actual History', line=dict(color='#7f7f7f')))
-        if len(f_pred) > 0:
-            fig_npi.add_trace(go.Scatter(x=f_pred['Date'], y=f_pred['Units_Sold_Forecast'], name=f'{pred_sku} EOL Phaseout', line=dict(color='#d62728', dash='dash')))
-        if len(f_succ) > 0:
-            fig_npi.add_trace(go.Scatter(x=f_succ['Date'], y=f_succ['Units_Sold_Forecast'], name=f'{succ_sku} New Launch Ramp-Up', line=dict(color='#2ca02c', width=2.5)))
-            
-        fig_npi.update_layout(title=f"Cannibalization & Successor Ramp: {pred_sku} -> {succ_sku}", height=380, hovermode='x unified')
-        st.plotly_chart(fig_npi, use_container_width=True)
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# TAB 8: WHAT-IF SCENARIO SIMULATOR (Expert Feature)
-# ═══════════════════════════════════════════════════════════════════════
-with tab8:
-    st.header("🔮 What-If Scenario Stress Testing Simulator")
-    st.markdown("*Simulate macroeconomic disruptions and policy shifts in real-time across the 19-month forecast horizon.*")
-    
-    if lgb_model is not None and test_features is not None:
-        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-        with col_s1:
-            pmi_delta = st.slider("Δ Manufacturing PMI Index", min_value=-10.0, max_value=10.0, value=0.0, step=0.5)
-        with col_s2:
-            auto_delta = st.slider("Δ Auto Production YoY (%)", min_value=-0.15, max_value=0.15, value=0.0, step=0.01, format="%.2f")
-        with col_s3:
-            ev_delta = st.slider("Δ EV Adoption Index", min_value=-25.0, max_value=25.0, value=0.0, step=1.0)
-        with col_s4:
-            cost_delta = st.slider("Δ Raw Material Cost Index", min_value=-20.0, max_value=20.0, value=0.0, step=1.0)
-            
-        # Run real-time simulation on test set
-        X_sim = test_features[model_features].copy().fillna(-1)
-        if 'ISM_Manufacturing_PMI' in X_sim.columns:
-            X_sim['ISM_Manufacturing_PMI'] += pmi_delta
-        if 'Auto_Production_YoY_Pct' in X_sim.columns:
-            X_sim['Auto_Production_YoY_Pct'] += auto_delta
-        if 'EV_Adoption_Index' in X_sim.columns:
-            X_sim['EV_Adoption_Index'] += ev_delta
-        if 'Raw_Material_Cost_Index' in X_sim.columns:
-            X_sim['Raw_Material_Cost_Index'] += cost_delta
-            
-        sim_preds = np.clip(np.round(lgb_model.predict(X_sim)), 0, None).astype(int)
-        
-        # Apply EOL cutoff
-        if 'Months_To_EOL' in test_features.columns:
-            sim_preds[test_features['Months_To_EOL'] < 0] = 0
-            
-        base_total = int(forecast['Units_Sold_Forecast'].sum()) if forecast is not None else int(sim_preds.sum())
-        sim_total = int(sim_preds.sum())
-        diff_units = sim_total - base_total
-        pct_diff = 100.0 * diff_units / max(base_total, 1)
-        
-        st.divider()
-        kpi1, kpi2, kpi3 = st.columns(3)
-        kpi1.metric("Baseline Total 19-Mo Demand", f"{base_total:,} units")
-        kpi2.metric("Stress Test Scenario Demand", f"{sim_total:,} units", delta=f"{diff_units:+,} units ({pct_diff:+.1f}%)")
-        kpi3.metric("Simulated Monthly Average", f"{int(sim_total/19):,} units/mo")
-        
-        # Monthly comparison timeline
-        sim_df = pd.DataFrame({'Date': test_features['Date'], 'Baseline': forecast['Units_Sold_Forecast'] if forecast is not None else sim_preds, 'Scenario': sim_preds})
-        monthly_comp = sim_df.groupby('Date').sum().reset_index().sort_values('Date')
-        
-        fig_sim = go.Figure()
-        fig_sim.add_trace(go.Scatter(x=monthly_comp['Date'], y=monthly_comp['Baseline'], name='Baseline Forecast', line=dict(color='#1f77b4', width=2.5)))
-        fig_sim.add_trace(go.Scatter(x=monthly_comp['Date'], y=monthly_comp['Scenario'], name='Simulated Scenario', line=dict(color='#d62728', dash='dash', width=2.5)))
-        fig_sim.update_layout(title="Monthly Demand Comparison: Baseline vs Stress Scenario", height=380, hovermode='x unified')
-        st.plotly_chart(fig_sim, use_container_width=True)
-    else:
-        st.info("What-If simulator requires model booster file.")
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# TAB 9: PROCUREMENT PLAN (P90 SAFETY STOCK)
-# ═══════════════════════════════════════════════════════════════════════
-with tab9:
-    st.header("📦 Procurement & Safety Stock Planning (P90 Quantile)")
-    st.markdown("*Supply chain risk mitigation: Convert probabilistic forecasts into safety stock buffers and procurement replenishment orders.*")
-    
-    if filtered_forecast is not None and 'Forecast_P90' in filtered_forecast.columns:
-        p50_total = int(filtered_forecast['Units_Sold_Forecast'].sum())
-        p90_total = int(filtered_forecast['Forecast_P90'].sum())
-        safety_buffer = max(0, p90_total - p50_total)
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("P50 Expected Demand", f"{p50_total:,} units")
-        c2.metric("P90 High-Confidence Demand", f"{p90_total:,} units")
-        c3.metric("Recommended Safety Buffer", f"{safety_buffer:,} units (+{100*safety_buffer/max(p50_total,1):.1f}%)")
-        
-        st.divider()
-        
-        # Procurement requirement by family
-        proc_fam = filtered_forecast.groupby('Product_Family').agg(
-            Base_Plan=('Units_Sold_Forecast', 'sum'),
-            P90_Plan=('Forecast_P90', 'sum')
-        ).reset_index()
-        proc_fam['Safety_Stock'] = proc_fam['P90_Plan'] - proc_fam['Base_Plan']
-        
-        fig_proc = px.bar(proc_fam, x='Product_Family', y=['Base_Plan', 'Safety_Stock'],
-                          title='Procurement Target by Family: Baseline Demand + Safety Stock Buffer',
-                          barmode='stack', color_discrete_sequence=['#2ca02c', '#ff7f0e'])
-        fig_proc.update_layout(height=380)
-        st.plotly_chart(fig_proc, use_container_width=True)
-        
-        st.subheader("Top High-Risk SKUs Requiring Buffer Stock")
-        sku_risk = filtered_forecast.groupby(['SKU_ID', 'Product_Family', 'Region']).agg(
-            P50=('Units_Sold_Forecast', 'sum'),
-            P90=('Forecast_P90', 'sum')
-        ).reset_index()
-        sku_risk['Buffer_Units'] = sku_risk['P90'] - sku_risk['P50']
-        sku_risk = sku_risk.sort_values('Buffer_Units', ascending=False)
-        st.dataframe(sku_risk.head(100), use_container_width=True, hide_index=True)
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# TAB 10: PLANNER EXCEPTIONS & LOST SALES (DOWNLOAD CENTER)
-# ═══════════════════════════════════════════════════════════════════════
-with tab10:
-    st.header("🚨 Planner Exception Center & Lost Sales Analysis")
-    
-    col_e1, col_e2 = st.columns(2)
-    with col_e1:
-        st.subheader("Historical Stockouts & Lost Revenue Impact")
-        if stockouts is not None:
-            total_lost_u = stockouts['Lost_Units'].fillna(0).sum()
-            avg_stockout_d = stockouts['Stockout_Days'].mean()
-            st.metric("Total Lost Order Units (Stockouts)", f"{int(total_lost_u):,}")
-            st.metric("Avg Stockout Duration", f"{avg_stockout_d:.1f} days/month")
-            
-            stock_reason = stockouts['Reason'].value_counts().reset_index()
-            stock_reason.columns = ['Root Cause', 'Incidents']
-            fig_reason = px.pie(stock_reason, values='Incidents', names='Root Cause', title='Root Causes of Supply Constraints', hole=0.35)
-            fig_reason.update_layout(height=280, margin=dict(t=30, b=10, l=10, r=10))
-            st.plotly_chart(fig_reason, use_container_width=True)
-            
-    with col_e2:
-        st.subheader("Planner Exception List")
-        if filtered_forecast is not None:
-            st.markdown("Automated alerts for planners: high coefficient of variation, new ramp-ups, and nearing EOL.")
-            exc_list = filtered_forecast.copy()
-            if 'Forecast_P90' in exc_list.columns:
-                exc_list['Volatility'] = exc_list['Forecast_P90'] - exc_list['Units_Sold_Forecast']
-                exc_top = exc_list.sort_values('Volatility', ascending=False).drop_duplicates(subset=['SKU_ID', 'Region'])
-                st.dataframe(exc_top[['Date', 'SKU_ID', 'Region', 'Units_Sold_Forecast', 'Volatility']].head(15), use_container_width=True, hide_index=True)
-                
-    st.divider()
-    st.subheader("📥 Export & Data Download Center")
-    col_d1, col_d2, col_d3 = st.columns(3)
-    
-    with col_d1:
-        if filtered_forecast is not None:
-            csv_fc = filtered_forecast.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download Filtered Forecasts (CSV)",
-                data=csv_fc,
-                file_name="celeris_forecast_export.csv",
-                mime="text/csv"
-            )
-            
-    with col_d2:
-        if anomalies is not None:
-            csv_anom = anomalies.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download Anomaly Register (CSV)",
-                data=csv_anom,
-                file_name="anomaly_register_export.csv",
-                mime="text/csv"
-            )
-            
-    with col_d3:
-        if (PROJECT_ROOT / 'submission.csv').exists():
-            with open(PROJECT_ROOT / 'submission.csv', 'rb') as f:
-                st.download_button(
-                    label="🏆 Download Final submission.csv",
-                    data=f.read(),
-                    file_name="submission.csv",
-                    mime="text/csv"
-                )
-
-# ═══════════════════════════════════════════════════════════════════════
-# FOOTER
-# ═══════════════════════════════════════════════════════════════════════
-st.divider()
-st.caption("Celeris Automobili Industrial — Demand Forecasting & Planning Control Tower | MKS AI & Data Hackathon 2026")
+# ════════════════════════════════════════════════════════════════════
+# 11 DOWNLOADS
+# ════════════════════════════════════════════════════════════════════
+with tabs[10]:
+    st.subheader('Data downloads (filtered where applicable)')
+    st.download_button('submission.csv (all 58,219 rows)', (ROOT / 'submission.csv').read_bytes(), 'submission.csv')
+    st.download_button('Forecast detail with P10/P50/P90 (filtered)', F.to_csv(index=False), 'forecast_detail.csv')
+    st.download_button('Clean history (filtered)', T.to_csv(index=False), 'train_clean.csv')
+    st.download_button('Anomaly register (filtered)', filt(anom).to_csv(index=False), 'anomaly_register.csv')
+    st.download_button('Backtest results (filtered)', B.to_csv(index=False), 'backtest_results.csv')
+    st.download_button('Data-quality report (JSON)', json.dumps(D['quality'], indent=2), 'data_quality_report.json')
+    if D['issues_rows'].exists():
+        st.download_button('Row-level fix log', D['issues_rows'].read_bytes(), 'data_quality_issues.csv')

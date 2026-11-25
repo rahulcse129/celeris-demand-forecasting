@@ -1,374 +1,418 @@
 """
-Feature Engineering for MKS Hackathon.
-Usage: python src/features.py
+Stage 3 - Feature library for the direct multi-horizon forecaster.
 
-Reads cleaned data from data/cleaned/
-Writes feature-engineered data to data/features/
+Design: every training row is (series i, forecast origin T, horizon h) with target month M = T + h.
+All series features are computed ONLY from data observed up to T, so the backtest and the
+production forecast (T = 2026-10, h = 1..19) use exactly the same code path - no leakage.
+
+    python src/features.py      -> builds driver analyses (macro lead/lag, intermittency classes)
 """
-
-import os
 import sys
 import warnings
 from pathlib import Path
-from datetime import datetime
 
-import pandas as pd
 import numpy as np
-from sklearn.preprocessing import LabelEncoder
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / 'src'))
+from utils import int_to_ym, ym_to_int  # noqa: E402
 
 warnings.filterwarnings('ignore')
+CLEAN = ROOT / 'data' / 'cleaned'
+FEAT = ROOT / 'data' / 'features'
+FEAT.mkdir(parents=True, exist_ok=True)
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CLEAN_DIR = PROJECT_ROOT / 'data' / 'cleaned'
-FEATURE_DIR = PROJECT_ROOT / 'data' / 'features'
-FEATURE_DIR.mkdir(parents=True, exist_ok=True)
+M0 = ym_to_int(pd.Series(['2019-01']))[0]
+LAST_OBS = ym_to_int(pd.Series(['2026-10']))[0] - M0       # column index of 2026-10
+N_MONTHS = ym_to_int(pd.Series(['2028-05']))[0] - M0 + 1
+H = 19
+MACRO = ['ISM_Manufacturing_PMI', 'Auto_Production_YoY_Pct', 'Vehicle_Inventory_Days', 'Raw_Material_Cost_Index',
+         'New_Vehicle_Orders_Index', 'Industrial_Util_Rate_Pct', 'Fuel_Price_Index', 'EV_Adoption_Index']
+CATS = ['Product_Family', 'Region', 'Sales_Channel', 'Customer_Name', 'Powertrain_Application', 'Size_Class']
 
 
-def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+def macro_short(name):
+    return name.split('_')[0] + '_' + name.split('_')[1][:4]
 
 
-log("Loading cleaned data...")
-train = pd.read_csv(CLEAN_DIR / 'train_clean.csv', low_memory=False)
-test = pd.read_csv(CLEAN_DIR / 'test_clean.csv', low_memory=False)
-macro = pd.read_csv(CLEAN_DIR / 'macro_indicators_clean.csv', low_memory=False)
-events = pd.read_csv(CLEAN_DIR / 'events_calendar_clean.csv', low_memory=False)
+def col(ym):
+    return int(ym_to_int(pd.Series([ym]))[0] - M0)
 
-# Track exact original test row index
-train['is_train'] = 1
-train['test_row_id'] = -1
 
-test['is_train'] = 0
-test['test_row_id'] = np.arange(len(test))
-test['Units_Sold'] = np.nan
-test['Revenue_USD'] = np.nan
-test['Unit_Price_USD'] = np.nan
-test['Unconstrained_Demand'] = np.nan
+# ════════════════════════════════════════════════════════════════════
+# PANEL
+# ════════════════════════════════════════════════════════════════════
+class Panel:
+    """Dense S x months arrays + per-series metadata."""
 
-# Align columns perfectly without duplication
-df = pd.concat([train, test[train.columns]], ignore_index=True)
-df = df.sort_values(['SKU_ID', 'Region', 'Date']).reset_index(drop=True)
-log(f"  Combined dataset: {len(df):,} rows (train: {len(train):,}, test: {len(test):,})")
+    def __init__(self):
+        tr = pd.read_parquet(CLEAN / 'train_clean.parquet')
+        te = pd.read_csv(CLEAN / 'test_clean.csv', dtype={'EOL_Date': str, 'Replaces_SKU': str})
+        self.sku = pd.read_csv(CLEAN / 'sku_master_clean.csv', dtype=str).set_index('SKU_ID')
+        self.events = pd.read_csv(CLEAN / 'events_calendar_clean.csv', dtype=str)
+        mac = pd.read_csv(CLEAN / 'macro_indicators_clean.csv')
+        self.train, self.test = tr, te
 
-# ═══════════════════════════════════════════════════════════════════════
-# 1. CALENDAR FEATURES
-# ═══════════════════════════════════════════════════════════════════════
-log("1. Generating calendar features...")
+        keys = pd.concat([tr[['SKU_ID', 'Region']], te[['SKU_ID', 'Region']]]).drop_duplicates()
+        keys = keys.sort_values(['SKU_ID', 'Region']).reset_index(drop=True)
+        self.keys = keys
+        self.idx = {k: i for i, k in enumerate(zip(keys['SKU_ID'], keys['Region']))}
+        S = len(keys)
+        r = np.array([self.idx[k] for k in zip(tr['SKU_ID'], tr['Region'])])
+        c = (ym_to_int(tr['Date']) - M0).values
+        self.Y = np.full((S, N_MONTHS), np.nan)
+        self.Y[r, c] = tr['Unconstrained_Demand'].values
+        self.Ship = np.full((S, N_MONTHS), np.nan)
+        self.Ship[r, c] = tr['Units_Sold'].values
 
-df['Year'] = df['Date'].str[:4].astype(int)
-df['Month'] = df['Date'].str[5:7].astype(int)
-df['Date_Num'] = df['Year'] * 12 + df['Month']
-df['Quarter'] = (df['Month'] - 1) // 3 + 1
-df['Is_Q4'] = (df['Quarter'] == 4).astype(int)
-df['Is_December'] = (df['Month'] == 12).astype(int)
-df['Is_January'] = (df['Month'] == 1).astype(int)
-df['Half_Year'] = (df['Month'] > 6).astype(int)
+        # metadata: latest customer / channel (test overrides train - accounts can switch)
+        last = tr.sort_values('Date').groupby(['SKU_ID', 'Region']).tail(1).set_index(['SKU_ID', 'Region'])
+        tmeta = te.groupby(['SKU_ID', 'Region'])[['Customer_Name', 'Sales_Channel']].first()
+        meta = keys.set_index(['SKU_ID', 'Region'])
+        for cname in ['Customer_Name', 'Sales_Channel']:
+            meta[cname] = tmeta[cname].reindex(meta.index).fillna(last[cname].reindex(meta.index))
+        meta = meta.reset_index()
+        for cname in ['Product_Family', 'Business_Unit', 'Powertrain_Application', 'Size_Class',
+                      'Launch_Date', 'EOL_Date', 'Replaces_SKU', 'Lifecycle_Status']:
+            meta[cname] = meta['SKU_ID'].map(self.sku[cname])
+        self.meta = meta
+        self.launch = np.where(meta['Launch_Date'].notna(), ym_to_int(meta['Launch_Date'].fillna('1900-01')) - M0, -999)
+        self.eol = np.where(meta['EOL_Date'].notna(), ym_to_int(meta['EOL_Date'].fillna('2100-01')) - M0, 999)
 
-# Cyclical encoding of month
-df['Month_Sin'] = np.sin(2 * np.pi * df['Month'] / 12)
-df['Month_Cos'] = np.cos(2 * np.pi * df['Month'] / 12)
+        mac = mac.set_index('Date').reindex(int_to_ym(np.arange(N_MONTHS) + M0))
+        self.macro = mac[MACRO].interpolate(limit_direction='both').values   # N_MONTHS x 8
 
-days_in_month = {1: 31, 2: 28, 3: 31, 4: 30, 5: 31, 6: 30,
-                 7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31}
-df['Days_In_Month'] = df['Month'].map(days_in_month)
+        self._event_masks()
+        self._clean_series()
 
-# ═══════════════════════════════════════════════════════════════════════
-# 2. HISTORICAL SUMMARY STATISTICS (per SKU-Region & per SKU)
-# ═══════════════════════════════════════════════════════════════════════
-log("2. Computing historical summary statistics...")
+    # ------------------------------------------------------------------
+    def _months(self, start, end):
+        a = col(start[:7])
+        b = col(end[:7]) if isinstance(end, str) and end else N_MONTHS - 1
+        return max(a, 0), min(b, N_MONTHS - 1)
 
-train_only = df[df['is_train'] == 1].copy()
+    def _event_masks(self):
+        """Holiday intensity (share of month), disruption & customer-event masks (S x months)."""
+        S = len(self.keys)
+        reg = self.meta['Region'].values
+        cust = self.meta['Customer_Name'].values
+        chan = self.meta['Sales_Channel'].values
+        fam = self.meta['Product_Family'].values
+        self.holiday = np.zeros((S, N_MONTHS))
+        self.no_train = np.zeros((S, N_MONTHS), bool)     # target months excluded from training
+        self.no_feat = np.zeros((S, N_MONTHS), bool)      # history months hidden from level features
+        self.shutdown = np.zeros((S, N_MONTHS))           # known customer shutdowns (incl. forecast window)
+        for _, e in self.events.iterrows():
+            st, en, et = e['Start_Date'], e['End_Date'], e['Event_Type']
+            scope, val = e['Scope_Type'], str(e['Scope_Value'])
+            if scope == 'Region':
+                rows = reg == val
+            elif scope == 'Channel':
+                rows = chan == val
+            elif scope == 'Product_Family':
+                rows = fam == val
+            elif scope == 'Customer':
+                cn, rg = [s.strip() for s in val.split('|')]
+                rows = (cust == cn) & (reg == rg)
+            else:
+                rows = np.ones(S, bool)
+            if et == 'Holiday':
+                if len(st) == 10:   # day-level -> share of each month covered
+                    for d in pd.date_range(st, en):
+                        c = col(d.strftime('%Y-%m'))
+                        if 0 <= c < N_MONTHS:
+                            self.holiday[rows, c] += 1 / d.days_in_month
+                else:
+                    a, b = self._months(st, en)
+                    self.holiday[rows, a:b + 1] += 1
+            elif et == 'Disruption':                     # COVID lockdowns
+                a, b = self._months(st, en)
+                self.no_train[rows, a:b + 2] = True
+                self.no_feat[rows, a:b + 1] = True
+            elif et == 'Customer Event' and 'strike' in e['Description'].lower() or \
+                    et == 'Customer Event' and 'shutdown' in e['Description'].lower():
+                a, b = self._months(st, en)
+                self.shutdown[rows, a:b + 1] = 1
+                if b <= LAST_OBS:
+                    self.no_train[rows, a:b + 1] = True
+                    self.no_feat[rows, a:b + 1] = True
+            elif et == 'Logistics':                      # Red Sea: delay + catch-up
+                a, b = self._months(st, en)
+                self.no_train[rows, a - 1:b + 1] = True
+            elif et == 'Supply Constraint':              # chip shortage: demand reconstructed, still uncertain
+                a, b = self._months(st, en)
+                self.no_train[rows, a:b + 1] = True
+            elif et == 'Announcement' and 'price increase' in e['Description'].lower():
+                a, _ = self._months(st, st)              # pre-buy before the 9% rise, payback after
+                self.no_train[:, a:a + 4] = True
+        self.holiday = np.clip(self.holiday, 0, 1)
 
-# SKU-Region stats using standard list aggregation
-sku_reg_stats = train_only.groupby(['SKU_ID', 'Region'])['Units_Sold'].agg(['mean', 'median', 'std', 'max', 'min', 'count']).reset_index()
-sku_reg_stats.columns = ['SKU_ID', 'Region', 'Hist_Mean_Demand', 'Hist_Median_Demand', 'Hist_Std_Demand', 'Hist_Max_Demand', 'Hist_Min_Demand', 'Hist_Count']
+    def _clean_series(self):
+        """Yc: one-off spikes capped (model target). Yf: Yc with disruption months hidden (features)."""
+        Y = self.Y[:, :LAST_OBS + 1]
+        nz = np.where(Y > 0, Y, np.nan)
+        med = pd.DataFrame(nz.T).rolling(13, center=True, min_periods=3).median().T.values
+        med = np.where(np.isnan(med), np.nanmedian(nz, axis=1, keepdims=True), med)
+        cap = 4.0 * med
+        self.spike = (Y > cap) & (Y > 20)
+        Yc = np.where(self.spike, cap, Y)
+        self.Yc = np.full_like(self.Y, np.nan)
+        self.Yc[:, :LAST_OBS + 1] = Yc
+        self.Yf = np.where(self.no_feat, np.nan, self.Yc)
 
-# SKU overall stats
-sku_stats = train_only.groupby('SKU_ID')['Units_Sold'].agg(['mean', 'median']).reset_index()
-sku_stats.columns = ['SKU_ID', 'SKU_Overall_Mean', 'SKU_Overall_Median']
 
-# Product Family stats
-fam_stats = train_only.groupby('Product_Family')['Units_Sold'].agg(['mean']).reset_index()
-fam_stats.columns = ['Product_Family', 'Family_Mean_Demand']
+# ════════════════════════════════════════════════════════════════════
+# FEATURES
+# ════════════════════════════════════════════════════════════════════
+def _nanmean(a, axis=1):
+    with np.errstate(all='ignore'):
+        return np.nanmean(a, axis=axis)
 
-# Recent 12-month mean (as of end of train, 2025-11 to 2026-10)
-recent_train = train_only[train_only['Date'] >= '2025-11']
-recent_sku_reg = recent_train.groupby(['SKU_ID', 'Region'])['Units_Sold'].agg(['mean']).reset_index()
-recent_sku_reg.columns = ['SKU_ID', 'Region', 'Recent_12m_Mean']
 
-df = df.merge(sku_reg_stats, on=['SKU_ID', 'Region'], how='left')
-df = df.merge(sku_stats, on=['SKU_ID'], how='left')
-df = df.merge(fam_stats, on=['Product_Family'], how='left')
-df = df.merge(recent_sku_reg, on=['SKU_ID', 'Region'], how='left')
+def _win(Y, T, k):
+    return Y[:, max(T - k + 1, 0):T + 1]
 
-# ── Expert: Inherit historical demand for new launches via Replaces_SKU ──
-log("  Applying Replaces_SKU demand inheritance for new launches...")
-pred_sku_stats = sku_stats.set_index('SKU_ID').to_dict('index')
-pred_reg_stats = sku_reg_stats.set_index(['SKU_ID', 'Region']).to_dict('index')
 
-rep_mask = df['Replaces_SKU'].notna() & (df['Replaces_SKU'].str.strip() != '') & (df['Hist_Mean_Demand'].isna() | (df['Hist_Mean_Demand'] == 0))
-for idx in df[rep_mask].index:
-    rep_sku = str(df.loc[idx, 'Replaces_SKU']).strip()
-    reg = df.loc[idx, 'Region']
-    if (rep_sku, reg) in pred_reg_stats:
-        rep_info = pred_reg_stats[(rep_sku, reg)]
-        df.loc[idx, 'Hist_Mean_Demand'] = rep_info['Hist_Mean_Demand']
-        df.loc[idx, 'Hist_Median_Demand'] = rep_info['Hist_Median_Demand']
-        df.loc[idx, 'Hist_Std_Demand'] = rep_info['Hist_Std_Demand']
-        df.loc[idx, 'Recent_12m_Mean'] = rep_info['Hist_Mean_Demand']
-    elif rep_sku in pred_sku_stats:
-        rep_info = pred_sku_stats[rep_sku]
-        df.loc[idx, 'Hist_Mean_Demand'] = rep_info['SKU_Overall_Mean']
-        df.loc[idx, 'Hist_Median_Demand'] = rep_info['SKU_Overall_Median']
-        df.loc[idx, 'Recent_12m_Mean'] = rep_info['SKU_Overall_Mean']
+def origin_state(P, T):
+    """Per-series statistics known at origin T (independent of horizon)."""
+    Yf = P.Yf
+    S = Yf.shape[0]
+    st = {}
+    for k in (3, 6, 12, 24):
+        st[f'r{k}'] = _nanmean(_win(Yf, T, k))
+    prev = Yf[:, max(T - 23, 0):max(T - 11, 0)]
+    st['r12_prev'] = _nanmean(prev) if prev.shape[1] else np.full(S, np.nan)
+    w12 = _win(Yf, T, 12)
+    with np.errstate(all='ignore'):
+        st['nz12'] = np.nanmean(np.where(np.isnan(w12), np.nan, w12 > 0), axis=1)
+        st['nzmean12'] = np.nanmean(np.where(w12 > 0, w12, np.nan), axis=1)
+        st['std12'] = np.nanstd(w12, axis=1)
+        st['nobs12'] = np.sum(~np.isnan(w12), axis=1)
+    # EWMA level
+    ew = np.full(S, np.nan)
+    for t in range(max(T - 35, 0), T + 1):
+        v = Yf[:, t]
+        ew = np.where(np.isnan(ew), v, np.where(np.isnan(v), ew, 0.25 * v + 0.75 * ew))
+    st['ewm'] = ew
+    # Croston-SBA rate (intermittent-demand method) over last 36 months
+    z = np.full(S, np.nan); p = np.full(S, np.nan); gap = np.ones(S)
+    for t in range(max(T - 35, 0), T + 1):
+        v = Yf[:, t]
+        hit = v > 0
+        z = np.where(hit, np.where(np.isnan(z), v, 0.15 * v + 0.85 * z), z)
+        p = np.where(hit, np.where(np.isnan(p), gap, 0.15 * gap + 0.85 * p), p)
+        gap = np.where(hit, 1, gap + 1)
+    st['sba'] = (1 - 0.15 / 2) * z / p
+    # recency / age
+    obs = ~np.isnan(P.Yc[:, :T + 1])
+    pos = P.Yc[:, :T + 1] > 0
+    st['first_obs'] = np.where(obs.any(1), obs.argmax(1), T + 1)
+    st['last_nz'] = np.where(pos.any(1), T - pos[:, ::-1].argmax(1), -999)
+    scale = st['r12'].copy()
+    for alt in ('r24', 'sba', 'ewm'):
+        scale = np.where(np.isnan(scale), st[alt], scale)
+    st['scale'] = np.maximum(np.nan_to_num(scale, nan=1.0), 1.0)
 
-# Impute remaining missing values with broader hierarchal fallbacks
-df['Recent_12m_Mean'] = df['Recent_12m_Mean'].fillna(df['Hist_Mean_Demand']).fillna(df['SKU_Overall_Mean']).fillna(0)
-df['Hist_Mean_Demand'] = df['Hist_Mean_Demand'].fillna(df['SKU_Overall_Mean']).fillna(0)
-df['Hist_Median_Demand'] = df['Hist_Median_Demand'].fillna(df['SKU_Overall_Median']).fillna(0)
-df['Hist_Std_Demand'] = df['Hist_Std_Demand'].fillna(0)
-df['Hist_Max_Demand'] = df['Hist_Max_Demand'].fillna(df['Hist_Mean_Demand'])
-df['Hist_Min_Demand'] = df['Hist_Min_Demand'].fillna(0)
+    # family x region aggregates (computed on rows observed in both windows to avoid mix effects)
+    grp = P.meta['Product_Family'] + '|' + P.meta['Region']
+    codes, uniq = pd.factorize(grp)
+    st['fr_id'] = codes
+    G = len(uniq)
+    hist = np.nan_to_num(Yf[:, :T + 1])
+    agg = np.zeros((G, T + 1))
+    np.add.at(agg, codes, hist)
+    seas = np.ones((G, 12))
+    yrs = agg[:, max(0, T - 47):T + 1]
+    base_m = max(0, T - 47)
+    for mth in range(12):
+        cols_m = [c for c in range(yrs.shape[1]) if (base_m + c) % 12 == mth]
+        seas[:, mth] = yrs[:, cols_m].mean(1) / np.maximum(yrs.mean(1), 1e-6)
+    st['fr_seas'] = seas
+    st['fr_trend'] = agg[:, T - 11:T + 1].sum(1) / np.maximum(agg[:, T - 23:T - 11].sum(1), 1)
+    st['fr_recent'] = agg[:, T - 5:T + 1].sum(1) / np.maximum(agg[:, T - 17:T - 11].sum(1), 1)
+    return st
 
-# ── Intermittent Demand: Croston-SBA Rate ──
-log("  Computing Croston-SBA intermittent demand rates...")
-croston_dict = {}
-for (sku, reg), grp in train_only.groupby(['SKU_ID', 'Region']):
-    vals = grp.sort_values('Date_Num')['Units_Sold'].values
-    non_zeros = np.where(vals > 0)[0]
-    if len(non_zeros) == 0:
-        croston_dict[(sku, reg)] = 0.0
-    else:
-        alpha = 0.1
-        z = float(vals[non_zeros[0]])
-        p = 1.0
-        last_idx = non_zeros[0]
-        for i_nz in non_zeros[1:]:
-            interval = float(i_nz - last_idx)
-            z = alpha * float(vals[i_nz]) + (1.0 - alpha) * z
-            p = alpha * interval + (1.0 - alpha) * p
-            last_idx = i_nz
-        rate = (1.0 - alpha / 2.0) * (z / max(p, 0.1))
-        croston_dict[(sku, reg)] = float(rate)
 
-df['Croston_SBA_Rate'] = [croston_dict.get((s, r), np.nan) for s, r in zip(df['SKU_ID'], df['Region'])]
-# For new launches, inherit predecessor Croston rate if available
-for idx in df[df['Croston_SBA_Rate'].isna() & df['Replaces_SKU'].notna()].index:
-    rep_sku = str(df.loc[idx, 'Replaces_SKU']).strip()
-    reg = df.loc[idx, 'Region']
-    if (rep_sku, reg) in croston_dict:
-        df.loc[idx, 'Croston_SBA_Rate'] = croston_dict[(rep_sku, reg)]
+def horizon_features(P, T, h, st, rows=None):
+    """Feature frame for target month M = T + h (all series, or `rows`)."""
+    Yf = P.Yf
+    S = Yf.shape[0]
+    rows = np.arange(S) if rows is None else rows
+    M = T + h
+    s = st['scale'][rows]
+    f = {'h': np.full(len(rows), h), 'target_month': np.full(len(rows), (M % 12) + 1),
+         'origin_month': np.full(len(rows), (T % 12) + 1)}
+    for k in ('r3', 'r6', 'r24', 'ewm', 'sba', 'nzmean12', 'std12', 'r12_prev'):
+        f[f'n_{k}'] = st[k][rows] / s
+    f['nz12'] = st['nz12'][rows]
+    f['nobs12'] = st['nobs12'][rows]
+    f['log_scale'] = np.log1p(s)
+    f['trend_12_12'] = st['r12'][rows] / np.maximum(st['r12_prev'][rows], 1)
+    f['last'] = Yf[rows, T] / s
+    f['last2'] = Yf[rows, T - 1] / s
 
-df['Croston_SBA_Rate'] = df['Croston_SBA_Rate'].fillna(df['Recent_12m_Mean'])
+    # order-cycle phase features: what happened in the same phase of a P-month cycle
+    for per in (2, 3, 4, 6):
+        ts = [t for t in range(T - 11, T + 1) if (M - t) % per == 0]
+        f[f'pm{per}'] = _nanmean(Yf[np.ix_(rows, ts)]) / s
+        with np.errstate(all='ignore'):
+            f[f'pz{per}'] = np.nanmean(np.where(np.isnan(Yf[np.ix_(rows, ts)]), np.nan, Yf[np.ix_(rows, ts)] == 0), axis=1)
+        f[f'sn{per}'] = Yf[rows, M - per * int(np.ceil(h / per))] / s
+    since = M - st['last_nz'][rows]
+    f['since_last_order'] = np.where(st['last_nz'][rows] < 0, 99, since)
+    for per in (2, 3):
+        f[f'on_phase{per}'] = (since % per == 0).astype(float)
 
-# ═══════════════════════════════════════════════════════════════════════
-# 3. LAG FEATURES & ROLLING STATS
-# ═══════════════════════════════════════════════════════════════════════
-log("3. Computing lag and rolling features...")
+    # same calendar month in previous years (seasonality / recurring shutdowns)
+    yrs = [M - 12 * k for k in range(1, 5) if M - 12 * k <= T and M - 12 * k >= 0]
+    sm = Yf[np.ix_(rows, yrs)]
+    f['pm12'] = _nanmean(sm) / s
+    with np.errstate(all='ignore'):
+        f['pz12'] = np.nanmean(np.where(np.isnan(sm), np.nan, sm == 0), axis=1)
+    f['sn12'] = Yf[rows, M - 12 * int(np.ceil(h / 12))] / s
+    allh = Yf[rows, :T + 1]
+    cal = allh[:, [t for t in range(T + 1) if t % 12 == M % 12]]
+    with np.errstate(all='ignore'):
+        f['seas_idx'] = _nanmean(cal) / np.maximum(_nanmean(allh), 1e-6)
+    # family x region level: smoother seasonality and the group's own momentum
+    fr = st['fr_id'][rows]
+    f['fr_seas'] = st['fr_seas'][fr, M % 12]
+    f['fr_trend'] = st['fr_trend'][fr]
+    f['fr_recent'] = st['fr_recent'][fr]
 
-df['Date_Num'] = df['Year'] * 12 + df['Month']
+    # events at target month
+    f['holiday'] = P.holiday[rows, M]
+    f['holiday_prev'] = P.holiday[rows, M - 12]
+    f['shutdown'] = P.shutdown[rows, M]
 
-# Fast lookup dict from train
-train_lookup = train_only.set_index(['SKU_ID', 'Region', 'Date_Num'])['Units_Sold'].to_dict()
+    # lifecycle
+    f['age'] = np.minimum(M - st['first_obs'][rows], 120)
+    f['since_launch'] = np.clip(M - P.launch[rows], -24, 120)
+    f['to_eol'] = np.clip(P.eol[rows] - M, -12, 60)
 
-for lag in [1, 2, 3, 6, 12]:
-    log(f"  Computing lag-{lag}...")
-    lag_keys = list(zip(df['SKU_ID'], df['Region'], df['Date_Num'] - lag))
-    df[f'Lag_{lag}'] = [train_lookup.get(k, np.nan) for k in lag_keys]
-    # Check Replaces_SKU inheritance if still NaN
-    nan_rep_mask = df[f'Lag_{lag}'].isna() & df['Replaces_SKU'].notna()
-    if nan_rep_mask.sum() > 0:
-        rep_keys = list(zip(df.loc[nan_rep_mask, 'Replaces_SKU'], df.loc[nan_rep_mask, 'Region'], df.loc[nan_rep_mask, 'Date_Num'] - lag))
-        df.loc[nan_rep_mask, f'Lag_{lag}'] = [train_lookup.get(k, np.nan) for k in rep_keys]
-    df[f'Lag_{lag}'] = df[f'Lag_{lag}'].fillna(df['Recent_12m_Mean'])
+    # macro drivers (known for the whole window). The target is level-normalised, so the driver is how
+    # far the indicator (1-month lead) sits from its average over the window the level was measured on.
+    # Raw macro LEVELS were tested and dropped: they act as time proxies and extrapolate badly.
+    for j, name in enumerate(MACRO):
+        f[f'w_{macro_short(name)}'] = P.macro[M - 1, j] - P.macro[T - 12:T, j].mean()
+    ev_sign = P.meta['Powertrain_Application'].map({'EV': 1.0, 'ICE': -1.0, 'Universal': 0.0}).values[rows]
+    f['ev_x_powertrain'] = ev_sign * (P.macro[M, 7] - P.macro[T, 7])
 
-log("  Computing rolling stats for train...")
-for window in [3, 6, 12]:
-    df[f'Rolling_{window}m_mean'] = df['Lag_1']
-    train_idx = df[df['is_train'] == 1].index
-    lag_grouped = df.loc[train_idx].groupby(['SKU_ID', 'Region'])['Lag_1']
-    df.loc[train_idx, f'Rolling_{window}m_mean'] = lag_grouped.transform(lambda s: s.rolling(window, min_periods=1).mean())
-    df.loc[train_idx, f'Rolling_{window}m_std'] = lag_grouped.transform(lambda s: s.rolling(window, min_periods=1).std()).fillna(0)
-    df.loc[train_idx, f'Rolling_{window}m_max'] = lag_grouped.transform(lambda s: s.rolling(window, min_periods=1).max())
-    df.loc[train_idx, f'Rolling_{window}m_min'] = lag_grouped.transform(lambda s: s.rolling(window, min_periods=1).min())
+    df = pd.DataFrame(f)
+    for c in CATS:
+        df[c] = P.meta[c].values[rows]
+    df['_row'] = rows
+    df['_T'] = T
+    df['_M'] = M
+    df['_scale'] = s
+    return df
 
-    test_idx = df[df['is_train'] == 0].index
-    df.loc[test_idx, f'Rolling_{window}m_mean'] = df.loc[test_idx, 'Recent_12m_Mean']
-    df.loc[test_idx, f'Rolling_{window}m_std'] = df.loc[test_idx, 'Hist_Std_Demand']
-    df.loc[test_idx, f'Rolling_{window}m_max'] = df.loc[test_idx, 'Hist_Max_Demand']
-    df.loc[test_idx, f'Rolling_{window}m_min'] = df.loc[test_idx, 'Hist_Min_Demand']
 
-# ═══════════════════════════════════════════════════════════════════════
-# 4. INTERMITTENCY CLASSIFICATION (Syntetos-Boylan)
-# ═══════════════════════════════════════════════════════════════════════
-log("4. Intermittency classification (ADI x CV2)...")
+def build_training(P, origins, max_target, rng=None, sample=1.0):
+    """Stack (series, origin, horizon) rows with known targets <= max_target."""
+    frames = []
+    for T in origins:
+        st = origin_state(P, T)
+        active = (st['nobs12'] > 0)
+        for h in range(1, H + 1):
+            M = T + h
+            if M > max_target:
+                break
+            y = P.Yc[:, M]
+            ok = active & ~np.isnan(y) & ~P.no_train[:, M]
+            rows = np.where(ok)[0]
+            if sample < 1.0 and rng is not None:
+                rows = rows[rng.random(len(rows)) < sample]
+            if not len(rows):
+                continue
+            df = horizon_features(P, T, h, st, rows)
+            df['y'] = y[rows]
+            frames.append(df)
+    out = pd.concat(frames, ignore_index=True)
+    for c in CATS:
+        out[c] = out[c].astype('category')
+    return out
 
-intermittency = []
-for (sku, region), grp in train_only.groupby(['SKU_ID', 'Region']):
-    demands = grp['Units_Sold'].values
-    non_zero = demands[demands > 0]
-    
-    if len(non_zero) == 0:
-        adi = 999.0
-        cv2 = 0.0
-    else:
-        nz_idx = np.where(demands > 0)[0]
-        adi = float(np.diff(nz_idx).mean()) if len(nz_idx) > 1 else float(len(demands))
-        mean_nz = non_zero.mean()
-        std_nz = non_zero.std()
-        cv2 = float((std_nz / mean_nz) ** 2) if mean_nz > 0 else 0.0
-    
-    if adi < 1.32 and cv2 < 0.49:
-        dclass = 'Smooth'
-    elif adi < 1.32 and cv2 >= 0.49:
-        dclass = 'Erratic'
-    elif adi >= 1.32 and cv2 < 0.49:
-        dclass = 'Intermittent'
-    else:
-        dclass = 'Lumpy'
-    
-    intermittency.append({
-        'SKU_ID': sku,
-        'Region': region,
-        'ADI': round(adi, 2),
-        'CV2': round(cv2, 4),
-        'Demand_Class': dclass,
-        'Zero_Pct': round(100.0 * (1.0 - len(non_zero) / max(len(demands), 1)), 1)
-    })
 
-intermittency_df = pd.DataFrame(intermittency)
-df = df.merge(intermittency_df, on=['SKU_ID', 'Region'], how='left')
-df['ADI'] = df['ADI'].fillna(1.0)
-df['CV2'] = df['CV2'].fillna(0.0)
-df['Demand_Class'] = df['Demand_Class'].fillna('Smooth')
-df['Zero_Pct'] = df['Zero_Pct'].fillna(0.0)
+def feature_columns(df):
+    return [c for c in df.columns if not c.startswith('_') and c != 'y']
 
-log(f"  Demand classes: {df['Demand_Class'].value_counts().to_dict()}")
 
-# ═══════════════════════════════════════════════════════════════════════
-# 5. MACRO INDICATOR FEATURES
-# ═══════════════════════════════════════════════════════════════════════
-log("5. Merging macro indicators...")
+# ════════════════════════════════════════════════════════════════════
+# DRIVER ANALYSIS (run as script)
+# ════════════════════════════════════════════════════════════════════
+def driver_analysis(P):
+    """Which indicator leads which family, at what lag, and is it stable over time?"""
+    fam = P.meta['Product_Family'].values
+    dates = int_to_ym(np.arange(LAST_OBS + 1) + M0)
+    rows, stab = [], []
+    for fname in sorted(set(fam)):
+        y = np.nansum(P.Yf[fam == fname, :LAST_OBS + 1], axis=0)
+        yoy = pd.Series(y).pct_change(12)
+        for j, mname in enumerate(MACRO):
+            x = pd.Series(P.macro[:LAST_OBS + 1, j])
+            xch = x.diff(12) if mname != 'Auto_Production_YoY_Pct' else x
+            for lag in range(0, 13):
+                cc = yoy.corr(xch.shift(lag))
+                rows.append(dict(Product_Family=fname, Indicator=mname, Lag=lag, Corr=round(float(cc), 3)))
+            # stability: best lag in 2020-2022 vs 2023-2026
+            for period, (a, b) in {'2020-2022': ('2020-01', '2022-12'), '2023-2026': ('2023-01', '2026-10')}.items():
+                m = (dates >= a) & (dates <= b)
+                cs = [yoy[m].corr(xch.shift(l)[m]) for l in range(13)]
+                k = int(np.nanargmax(np.abs(cs)))
+                stab.append(dict(Product_Family=fname, Indicator=mname, Period=period, Best_Lag=k, Corr=round(float(cs[k]), 3)))
+    ll = pd.DataFrame(rows)
+    best = ll.loc[ll.groupby(['Product_Family', 'Indicator'])['Corr'].apply(lambda s: s.abs().idxmax())]
+    ll.to_csv(FEAT / 'macro_lead_lag.csv', index=False)
+    best.to_csv(FEAT / 'macro_best_lag.csv', index=False)
+    pd.DataFrame(stab).to_csv(FEAT / 'macro_lag_stability.csv', index=False)
 
-macro_cols = ['ISM_Manufacturing_PMI', 'Auto_Production_YoY_Pct', 'Vehicle_Inventory_Days',
-              'Raw_Material_Cost_Index', 'New_Vehicle_Orders_Index', 'Industrial_Util_Rate_Pct',
-              'Fuel_Price_Index', 'EV_Adoption_Index']
+    # EV transition: demand index by powertrain
+    pt = P.meta['Powertrain_Application'].values
+    ev = []
+    for p in ('EV', 'ICE', 'Universal'):
+        y = np.nansum(P.Yf[pt == p, :LAST_OBS + 1], axis=0)
+        for i, d in enumerate(dates):
+            ev.append(dict(Date=d, Powertrain=p, Units=float(y[i]), EV_Adoption_Index=float(P.macro[i, 7])))
+    pd.DataFrame(ev).to_csv(FEAT / 'ev_transition.csv', index=False)
+    return best
 
-macro_merge = macro[['Date'] + macro_cols].copy()
-for col in macro_cols:
-    macro_merge[col] = pd.to_numeric(macro_merge[col], errors='coerce')
 
-df = df.merge(macro_merge, on='Date', how='left')
+def intermittency(P):
+    """Syntetos-Boylan class + detected order cycle per series (last 24 months)."""
+    out = []
+    for i, (sku, reg) in enumerate(zip(P.meta['SKU_ID'], P.meta['Region'])):
+        y = P.Yf[i, LAST_OBS - 23:LAST_OBS + 1]
+        y = y[~np.isnan(y)]
+        nzi = np.where(y > 0)[0]
+        if len(nzi) < 2:
+            out.append(dict(SKU_ID=sku, Region=reg, ADI=np.nan, CV2=np.nan, Demand_Class='Insufficient history',
+                            Order_Cycle_Months=np.nan, Zero_Pct=np.nan))
+            continue
+        adi = float(np.diff(nzi).mean())
+        nzv = y[nzi]
+        cv2 = float((nzv.std() / nzv.mean()) ** 2)
+        cls = ('Smooth' if cv2 < 0.49 else 'Erratic') if adi < 1.32 else ('Intermittent' if cv2 < 0.49 else 'Lumpy')
+        cyc = int(np.median(np.diff(nzi)))
+        # cycle change: compare first and second 12 months
+        y_old = P.Yf[i, LAST_OBS - 47:LAST_OBS - 23]
+        nz_old = np.where(y_old > 0)[0]
+        cyc_old = int(np.median(np.diff(nz_old))) if len(nz_old) > 1 else np.nan
+        out.append(dict(SKU_ID=sku, Region=reg, ADI=round(adi, 2), CV2=round(cv2, 3), Demand_Class=cls,
+                        Order_Cycle_Months=cyc, Previous_Cycle_Months=cyc_old,
+                        Zero_Pct=round(100 * (y == 0).mean(), 1)))
+    return pd.DataFrame(out)
 
-# 1-month lag for macro indicators
-macro_lag = macro_merge.copy()
-macro_lag['Date_Num'] = macro_lag['Date'].str[:4].astype(int) * 12 + macro_lag['Date'].str[5:7].astype(int) + 1
-macro_lag = macro_lag.rename(columns={c: f'{c}_Lag1' for c in macro_cols})
-df = df.merge(macro_lag[['Date_Num'] + [f'{c}_Lag1' for c in macro_cols]], on='Date_Num', how='left')
 
-for c in macro_cols:
-    df[c] = df[c].ffill().bfill().fillna(0)
-    df[f'{c}_Lag1'] = df[f'{c}_Lag1'].ffill().bfill().fillna(0)
-
-# ═══════════════════════════════════════════════════════════════════════
-# 6. EVENT FEATURES
-# ═══════════════════════════════════════════════════════════════════════
-log("6. Generating event features...")
-
-df['Has_Price_Change'] = 0
-df['Has_Disruption'] = 0
-df['Has_Holiday'] = 0
-df['Has_Supply_Constraint'] = 0
-
-for _, evt in events.iterrows():
-    start = str(evt.get('Start_Date', ''))[:7]
-    end = str(evt.get('End_Date', ''))[:7] if pd.notna(evt.get('End_Date')) and str(evt.get('End_Date')).strip() != '' else start
-    evt_type = str(evt.get('Event_Type', '')).lower()
-    
-    if len(start) == 7 and len(end) == 7:
-        mask = (df['Date'] >= start) & (df['Date'] <= end)
-        scope_type = str(evt.get('Scope_Type', '')).lower()
-        scope_val = str(evt.get('Scope_Value', ''))
-        
-        if scope_type == 'region' and scope_val != 'All':
-            mask = mask & (df['Region'] == scope_val)
-        elif scope_type == 'product_family':
-            mask = mask & (df['Product_Family'] == scope_val)
-        
-        if 'price' in evt_type:
-            df.loc[mask, 'Has_Price_Change'] = 1
-        elif 'disruption' in evt_type:
-            df.loc[mask, 'Has_Disruption'] = 1
-        elif 'holiday' in evt_type:
-            df.loc[mask, 'Has_Holiday'] = 1
-        elif 'supply' in evt_type or 'constraint' in evt_type:
-            df.loc[mask, 'Has_Supply_Constraint'] = 1
-
-# ═══════════════════════════════════════════════════════════════════════
-# 7. LIFECYCLE FEATURES
-# ═══════════════════════════════════════════════════════════════════════
-log("7. Generating lifecycle features...")
-
-def parse_num(dt_str):
-    if pd.isna(dt_str) or len(str(dt_str)) < 7:
-        return np.nan
-    s = str(dt_str)
-    try:
-        return int(s[:4]) * 12 + int(s[5:7])
-    except:
-        return np.nan
-
-df['Launch_Date_Num'] = df['Launch_Date'].apply(parse_num)
-df['EOL_Date_Num'] = df['EOL_Date'].apply(parse_num)
-
-df['Months_Since_Launch'] = (df['Date_Num'] - df['Launch_Date_Num']).fillna(999)
-df['Months_To_EOL'] = (df['EOL_Date_Num'] - df['Date_Num']).fillna(999)
-
-df['Is_New_Launch'] = ((df['Months_Since_Launch'] >= 0) & (df['Months_Since_Launch'] <= 6)).astype(int)
-df['Is_Near_EOL'] = ((df['Months_To_EOL'] >= 0) & (df['Months_To_EOL'] <= 6)).astype(int)
-df['Is_Discontinued'] = (df['Lifecycle_Status'] == 'Discontinued').astype(int)
-
-# ═══════════════════════════════════════════════════════════════════════
-# 8. EV TRANSITION IMPACT (Expert feature)
-# ═══════════════════════════════════════════════════════════════════════
-log("8. Generating EV transition features...")
-
-df['EV_Impact'] = 0.0
-ev_idx = df['EV_Adoption_Index'].fillna(0)
-df.loc[df['Powertrain_Application'] == 'EV', 'EV_Impact'] = ev_idx / 100.0
-df.loc[df['Powertrain_Application'] == 'ICE', 'EV_Impact'] = -ev_idx / 100.0
-
-# ═══════════════════════════════════════════════════════════════════════
-# 9. ENCODING CATEGORICAL FEATURES
-# ═══════════════════════════════════════════════════════════════════════
-log("9. Encoding categoricals...")
-
-cat_cols = ['Product_Family', 'Business_Unit', 'Region', 'Sales_Channel',
-            'Customer_Name', 'Demand_Class', 'Powertrain_Application', 'Size_Class']
-
-for col in cat_cols:
-    if col in df.columns:
-        df[col] = df[col].fillna('Unknown').astype(str)
-        le = LabelEncoder()
-        df[f'{col}_Encoded'] = le.fit_transform(df[col])
-
-df.drop(columns=['Launch_Date_Num', 'EOL_Date_Num'], inplace=True, errors='ignore')
-
-# ═══════════════════════════════════════════════════════════════════════
-# 10. SPLIT AND SAVE FEATURES
-# ═══════════════════════════════════════════════════════════════════════
-log("10. Saving train and test feature matrices...")
-
-train_out = df[df['is_train'] == 1].drop(columns=['is_train', 'test_row_id']).reset_index(drop=True)
-
-# Ensure test_features matches the exact row order of test.csv!
-test_out = df[df['is_train'] == 0].sort_values('test_row_id').reset_index(drop=True)
-test_out = test_out.drop(columns=['is_train', 'test_row_id', 'Units_Sold', 'Revenue_USD', 'Unit_Price_USD', 'Unconstrained_Demand'], errors='ignore')
-
-train_out.to_csv(FEATURE_DIR / 'train_features.csv', index=False)
-test_out.to_csv(FEATURE_DIR / 'test_features.csv', index=False)
-intermittency_df.to_csv(FEATURE_DIR / 'intermittency_classes.csv', index=False)
-
-log(f"  train_features saved: {train_out.shape[0]:,} rows x {train_out.shape[1]} columns")
-log(f"  test_features saved:  {test_out.shape[0]:,} rows x {test_out.shape[1]} columns")
-log("Feature engineering complete!")
+if __name__ == '__main__':
+    P = Panel()
+    print(f'Panel: {P.Y.shape[0]:,} series x {N_MONTHS} months; spikes capped: {int(P.spike.sum()):,}')
+    best = driver_analysis(P)
+    print(best.sort_values('Corr', key=abs, ascending=False).head(12).to_string(index=False))
+    ic = intermittency(P)
+    ic.to_csv(FEAT / 'intermittency_classes.csv', index=False)
+    print(ic['Demand_Class'].value_counts().to_string())
+    print('Order cycles (months):', ic['Order_Cycle_Months'].value_counts().to_dict())
+    print('Series whose cycle changed vs prior 24m:',
+          int((ic['Order_Cycle_Months'] != ic['Previous_Cycle_Months']).sum()))

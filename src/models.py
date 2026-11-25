@@ -1,387 +1,356 @@
 """
-Advanced Forecasting Pipeline: LightGBM + CatBoost Blended Ensemble + Hierarchical Reconciliation.
-MKS AI & Data Hackathon 2026
+Stage 4 - Rolling-origin backtest (19-month horizon) + final forecast.
 
-Usage: python src/models.py
+    python src/models.py            # full run (backtest + final forecast)
+    python src/models.py --fast     # one backtest fold (development)
+
+Model: one global LightGBM, direct multi-horizon (h = 1..19), trained on scale-normalised
+unconstrained demand with weight = series scale, objective L1  ->  equivalent to minimising WAPE.
+P10/P90 from quantile LightGBMs on the same features. Lifecycle (EOL, launches via Replaces_SKU) and
+known events (customer shutdown) applied after the model. Bottom-up => coherent at every level.
 """
-
-import os
-import sys
 import json
+import sys
+import time
 import warnings
 from pathlib import Path
-from datetime import datetime
 
-import pandas as pd
-import numpy as np
-from sklearn.metrics import mean_absolute_error
 import lightgbm as lgb
-from catboost import CatBoostRegressor
+import numpy as np
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / 'src'))
+from features import (H, LAST_OBS, M0, Panel, build_training, col, feature_columns,  # noqa: E402
+                      horizon_features, origin_state)
+from utils import bias, int_to_ym, wape  # noqa: E402
 
 warnings.filterwarnings('ignore')
+FC = ROOT / 'data' / 'forecasts'
+FEAT = ROOT / 'data' / 'features'
+REP = ROOT / 'reports'
+FC.mkdir(parents=True, exist_ok=True)
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-FEATURE_DIR = PROJECT_ROOT / 'data' / 'features'
-FORECAST_DIR = PROJECT_ROOT / 'data' / 'forecasts'
-REPORT_DIR = PROJECT_ROOT / 'reports'
-FORECAST_DIR.mkdir(parents=True, exist_ok=True)
-REPORT_DIR.mkdir(parents=True, exist_ok=True)
+FAST = '--fast' in sys.argv
+SEED = 42
+FIRST_ORIGIN = col('2020-09')
+FOLDS = [col('2023-03'), col('2024-03'), col('2025-03')]      # each forecasts 19 months ahead
+PARAMS = dict(objective='l1', learning_rate=0.05, num_leaves=127, min_data_in_leaf=300,
+              feature_fraction=0.8, bagging_fraction=0.7, bagging_freq=1, lambda_l2=1.0,
+              max_bin=255, verbose=-1, num_threads=0, seed=SEED)
+ROUNDS = 900
+QROUNDS = 500
 
 
 def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+    print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
-def wape(y_true, y_pred):
-    total = np.abs(y_true).sum()
-    if total == 0:
-        return 0.0
-    return float(np.abs(y_true - y_pred).sum() / total)
+def fit(df, feats, objective='l1', alpha=None, rounds=ROUNDS):
+    p = dict(PARAMS, objective=objective)
+    if alpha is not None:
+        p['alpha'] = alpha
+    y = np.clip(df['y'].values / df['_scale'].values, 0, 12)
+    ds = lgb.Dataset(df[feats], y, weight=df['_scale'].values, categorical_feature=CATS_IN(feats), free_raw_data=False)
+    return lgb.train(p, ds, num_boost_round=rounds)
 
 
-def bias(y_true, y_pred):
-    total = np.abs(y_true).sum()
-    if total == 0:
-        return 0.0
-    return float((y_pred - y_true).sum() / total)
+def CATS_IN(feats):
+    from features import CATS
+    return [c for c in CATS if c in feats]
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# 1. LOAD UPGRADED FEATURE MATRICES
-# ═══════════════════════════════════════════════════════════════════════
-log("Loading feature-engineered datasets...")
-train = pd.read_csv(FEATURE_DIR / 'train_features.csv', low_memory=False)
-test = pd.read_csv(FEATURE_DIR / 'test_features.csv', low_memory=False)
+def train_origins(T_cut):
+    """Origins whose first horizon is still observed; every 2nd month keeps the set compact."""
+    return list(range(FIRST_ORIGIN, T_cut, 2))
 
-log(f"  Train: {len(train):,} rows | Test: {len(test):,} rows")
 
-# ═══════════════════════════════════════════════════════════════════════
-# 2. SELECT PREDICTIVE FEATURES
-# ═══════════════════════════════════════════════════════════════════════
-num_features = [
-    'Year', 'Month', 'Quarter', 'Is_Q4', 'Is_December', 'Is_January', 'Half_Year',
-    'Month_Sin', 'Month_Cos', 'Days_In_Month',
-    'Hist_Mean_Demand', 'Hist_Median_Demand', 'Hist_Std_Demand', 'Hist_Max_Demand', 'Hist_Min_Demand',
-    'Hist_Count', 'SKU_Overall_Mean', 'SKU_Overall_Median', 'Family_Mean_Demand', 'Recent_12m_Mean',
-    'Croston_SBA_Rate',
-    'Lag_1', 'Lag_2', 'Lag_3', 'Lag_6', 'Lag_12',
-    'Rolling_3m_mean', 'Rolling_3m_std', 'Rolling_3m_max', 'Rolling_3m_min',
-    'Rolling_6m_mean', 'Rolling_6m_std', 'Rolling_6m_max', 'Rolling_6m_min',
-    'Rolling_12m_mean', 'Rolling_12m_std', 'Rolling_12m_max', 'Rolling_12m_min',
-    'ADI', 'CV2', 'Zero_Pct',
-    'Months_Since_Launch', 'Months_To_EOL', 'Is_New_Launch', 'Is_Near_EOL', 'Is_Discontinued',
-    'Has_Price_Change', 'Has_Disruption', 'Has_Holiday', 'Has_Supply_Constraint',
-    'EV_Impact',
-]
+def forecast_rows(P, T, rows_by_h=None):
+    st = origin_state(P, T)
+    frames = []
+    for h in range(1, H + 1):
+        rows = None if rows_by_h is None else rows_by_h.get(h)
+        if rows is not None and not len(rows):
+            continue
+        frames.append(horizon_features(P, T, h, st, rows))
+    df = pd.concat(frames, ignore_index=True)
+    from features import CATS
+    for c in CATS:
+        df[c] = df[c].astype('category')
+    return df, st
 
-macro_cols = [
-    'ISM_Manufacturing_PMI', 'Auto_Production_YoY_Pct', 'Vehicle_Inventory_Days',
-    'Raw_Material_Cost_Index', 'New_Vehicle_Orders_Index', 'Industrial_Util_Rate_Pct',
-    'Fuel_Price_Index', 'EV_Adoption_Index',
-]
-macro_lag_cols = [f'{c}_Lag1' for c in macro_cols]
-num_features += macro_cols + macro_lag_cols
 
-cat_features = [
-    'Product_Family_Encoded', 'Business_Unit_Encoded', 'Region_Encoded',
-    'Sales_Channel_Encoded', 'Customer_Name_Encoded', 'Demand_Class_Encoded',
-    'Powertrain_Application_Encoded', 'Size_Class_Encoded'
-]
+def align_cats(df, ref):
+    from features import CATS
+    for c in CATS:
+        df[c] = pd.Categorical(df[c].astype(str), categories=ref[c].cat.categories)
+    return df
 
-features = [f for f in (num_features + cat_features) if f in train.columns and f in test.columns]
-log(f"  Active feature set: {len(features)} attributes")
 
-TARGET = 'Units_Sold'
+# ════════════════════════════════════════════════════════════════════
+# Domain post-processing
+# ════════════════════════════════════════════════════════════════════
+def shutdown_factor(P):
+    """Analog for a customer plant shutdown: Nexon Motor Group Europe strike (2023-10..11)."""
+    m = P.shutdown[:, :LAST_OBS + 1] > 0
+    rows = np.where(m.any(1))[0]
+    a, b = np.where(m[rows[0]])[0][[0, -1]]
+    during = np.nansum(P.Y[rows, a:b + 1])
+    normal = np.nansum(P.Y[rows, a - 3:a]) + np.nansum(P.Y[rows, b + 1:b + 4])
+    return float(during / (b - a + 1) / (normal / 6))
 
-# ═══════════════════════════════════════════════════════════════════════
-# 3. BACKTEST SPLIT (Validation: 2025-11 to 2026-10)
-# ═══════════════════════════════════════════════════════════════════════
-log("Partitioning temporal backtest (Train <= 2025-10, Val: 2025-11 -> 2026-10)...")
 
-train_mask = train['Date'] <= '2025-10'
-val_mask = (train['Date'] >= '2025-11') & (train['Date'] <= '2026-10')
+def launch_ramp(P):
+    """Successor demand per region relative to predecessor per-region level, by months since launch."""
+    meta, out = P.meta, []
+    sku = P.sku
+    for s, r in sku[sku['Replaces_SKU'].notna()].iterrows():
+        L = col(r['Launch_Date'])
+        if L + 12 > LAST_OBS:
+            continue
+        pred_rows = np.where(meta['SKU_ID'] == r['Replaces_SKU'])[0]
+        succ_rows = np.where(meta['SKU_ID'] == s)[0]
+        lvl = np.nanmean(P.Y[pred_rows, L - 12:L])
+        for k in range(0, 19):
+            if L + k <= LAST_OBS:
+                out.append(dict(SKU=s, k=k, ratio=np.nanmean(P.Y[succ_rows, L + k]) / lvl))
+    d = pd.DataFrame(out)
+    ramp = d.groupby('k')['ratio'].median()
+    ramp = ramp.rolling(3, center=True, min_periods=1).mean()
+    return ramp.reindex(range(0, 25)).ffill(), d
 
-X_tr = train.loc[train_mask, features].fillna(-1)
-y_tr = train.loc[train_mask, TARGET].fillna(0)
-X_val = train.loc[val_mask, features].fillna(-1)
-y_val = train.loc[val_mask, TARGET].fillna(0)
 
-log(f"  Backtest Train: {len(X_tr):,} rows | Val: {len(X_val):,} rows")
+def postprocess(P, df, pred, q10, q90, factor, ramp, st, T):
+    """Apply lifecycle rules, launches and known events. Returns arrays + reason codes."""
+    rows, M = df['_row'].values, df['_M'].values
+    pred, q10, q90 = np.nan_to_num(pred), np.nan_to_num(q10), np.nan_to_num(q90)
+    reason = np.array([''] * len(df), dtype=object)
+    # 1) launches with no history: inherit predecessor level x empirical ramp
+    new = (st['nobs12'][rows] == 0) & P.meta['Replaces_SKU'].notna().values[rows]
+    for i in np.where(new)[0]:
+        rr = rows[i]
+        pred_sku = P.meta['Replaces_SKU'].iat[rr]
+        prow = np.where(P.meta['SKU_ID'].values == pred_sku)[0]
+        same_reg = [p for p in prow if P.meta['Region'].iat[p] == P.meta['Region'].iat[rr]]
+        base = np.nanmean(P.Yf[same_reg if same_reg else prow, T - 11:T + 1])     # only data known at origin
+        if np.isnan(base):
+            base = np.nanmean(P.Yf[prow, :T + 1])
+        k = int(M[i] - P.launch[rr])
+        pred[i] = np.nan_to_num(base) * ramp.get(k, ramp.iloc[-1]) if k >= 0 else 0.0
+        q10[i], q90[i] = 0.5 * pred[i], 1.7 * pred[i]
+        reason[i] = f'launch: {pred_sku} level x ramp(k={k})'
+    # 2) customer shutdown in the forecast window (Orion Driveline NA retooling 2027-07..08)
+    sd = P.shutdown[rows, M] > 0
+    pred[sd] *= factor; q10[sd] *= factor; q90[sd] *= factor
+    reason[sd] = f'customer shutdown x{factor:.2f} (Nexon strike analog)'
+    # 3) lifecycle: nothing after EOL, nothing before launch (business rule 5)
+    dead = (M > P.eol[rows]) | (M < P.launch[rows])
+    pred[dead] = q10[dead] = q90[dead] = 0
+    reason[dead] = 'after EOL / before launch -> 0'
+    q10 = np.minimum(q10, pred)
+    q90 = np.maximum(q90, pred)
+    return pred, q10, q90, reason
 
-val_data = train.loc[val_mask].copy()
 
-# ═══════════════════════════════════════════════════════════════════════
-# 4. BASELINE BENCHMARKS
-# ═══════════════════════════════════════════════════════════════════════
-log("4. Evaluating baselines...")
-# Seasonal Naïve (Lag-12)
-val_data['Pred_SeasNaive'] = val_data['Lag_12'].fillna(0).clip(lower=0)
-sn_wape = wape(val_data[TARGET], val_data['Pred_SeasNaive'])
-sn_bias = bias(val_data[TARGET], val_data['Pred_SeasNaive'])
-
-# Moving Average (6m)
-val_data['Pred_MA6'] = val_data['Rolling_6m_mean'].fillna(val_data['Hist_Mean_Demand']).fillna(0).clip(lower=0)
-ma_wape = wape(val_data[TARGET], val_data['Pred_MA6'])
-ma_bias = bias(val_data[TARGET], val_data['Pred_MA6'])
-
-log(f"  Baseline 1 (Seasonal Naïve) — WAPE: {sn_wape:.4f}, Bias: {sn_bias:.4f}")
-log(f"  Baseline 2 (6-Month MA)     — WAPE: {ma_wape:.4f}, Bias: {ma_bias:.4f}")
-
-# ═══════════════════════════════════════════════════════════════════════
-# 5. MODEL A: LIGHTGBM GLOBAL REGRESSOR
-# ═══════════════════════════════════════════════════════════════════════
-log("5. Training LightGBM Global Regressor...")
-
-lgb_params = {
-    'objective': 'regression',
-    'metric': 'mae',
-    'learning_rate': 0.04,
-    'num_leaves': 63,
-    'max_depth': -1,
-    'min_child_samples': 25,
-    'subsample': 0.85,
-    'colsample_bytree': 0.85,
-    'reg_alpha': 0.15,
-    'reg_lambda': 0.15,
-    'verbose': -1,
-    'n_jobs': -1,
-    'seed': 42,
-}
-
-dtrain = lgb.Dataset(X_tr, label=y_tr)
-dval = lgb.Dataset(X_val, label=y_val, reference=dtrain)
-
-model_lgb = lgb.train(
-    lgb_params,
-    dtrain,
-    num_boost_round=1200,
-    valid_sets=[dtrain, dval],
-    callbacks=[lgb.early_stopping(stopping_rounds=60, verbose=False), lgb.log_evaluation(period=0)]
-)
-
-val_data['Pred_LGB'] = np.clip(np.round(model_lgb.predict(X_val)), 0, None)
-lgb_wape = wape(val_data[TARGET], val_data['Pred_LGB'])
-lgb_bias = bias(val_data[TARGET], val_data['Pred_LGB'])
-lgb_mae = mean_absolute_error(val_data[TARGET], val_data['Pred_LGB'])
-log(f"  LightGBM — WAPE: {lgb_wape:.4f}, Bias: {lgb_bias:.4f}, MAE: {lgb_mae:.2f}")
-
-# ═══════════════════════════════════════════════════════════════════════
-# 6. MODEL B: CATBOOST REGRESSOR
-# ═══════════════════════════════════════════════════════════════════════
-log("6. Training CatBoost Regressor...")
-
-cat_model = CatBoostRegressor(
-    iterations=350,
-    learning_rate=0.07,
-    depth=6,
-    loss_function='MAE',
-    random_seed=42,
-    verbose=0,
-    thread_count=-1
-)
-
-cat_model.fit(X_tr, y_tr, eval_set=(X_val, y_val), early_stopping_rounds=40, verbose=False)
-
-val_data['Pred_CatBoost'] = np.clip(np.round(cat_model.predict(X_val)), 0, None)
-cat_wape = wape(val_data[TARGET], val_data['Pred_CatBoost'])
-cat_bias = bias(val_data[TARGET], val_data['Pred_CatBoost'])
-log(f"  CatBoost — WAPE: {cat_wape:.4f}, Bias: {cat_bias:.4f}")
-
-# ═══════════════════════════════════════════════════════════════════════
-# 7. BLENDED ENSEMBLE (LightGBM + CatBoost)
-# ═══════════════════════════════════════════════════════════════════════
-log("7. Evaluating Blended Ensemble...")
-
-val_data['Pred_Ensemble'] = np.clip(np.round(0.55 * val_data['Pred_LGB'] + 0.45 * val_data['Pred_CatBoost']), 0, None)
-ens_wape = wape(val_data[TARGET], val_data['Pred_Ensemble'])
-ens_bias = bias(val_data[TARGET], val_data['Pred_Ensemble'])
-ens_mae = mean_absolute_error(val_data[TARGET], val_data['Pred_Ensemble'])
-log(f"  Blended Ensemble — WAPE: {ens_wape:.4f}, Bias: {ens_bias:.4f}, MAE: {ens_mae:.2f}")
-
-# Feature importance from LightGBM
-importance = pd.DataFrame({
-    'feature': features,
-    'importance': model_lgb.feature_importance('gain')
-}).sort_values('importance', ascending=False)
-
-# ═══════════════════════════════════════════════════════════════════════
-# 8. RETRAINING ON FULL DATASET & TEST INFERENCE
-# ═══════════════════════════════════════════════════════════════════════
-log("8. Retraining full ensemble on all historical data (2019-01 -> 2026-10)...")
-
-X_full = train[features].fillna(-1)
-y_full = train[TARGET].fillna(0)
-
-# Full LightGBM
-dtrain_full = lgb.Dataset(X_full, label=y_full)
-final_lgb = lgb.train(
-    lgb_params,
-    dtrain_full,
-    num_boost_round=model_lgb.best_iteration or 350,
-    callbacks=[lgb.log_evaluation(period=0)]
-)
-final_lgb.save_model(str(FORECAST_DIR / 'lgb_model.txt'))
-
-with open(FORECAST_DIR / 'model_features.json', 'w') as f:
-    json.dump(features, f)
-
-# Full CatBoost
-final_cat = CatBoostRegressor(
-    iterations=min(cat_model.get_best_iteration() or 300, 300),
-    learning_rate=0.07,
-    depth=6,
-    loss_function='MAE',
-    random_seed=42,
-    verbose=0,
-    thread_count=-1
-)
-final_cat.fit(X_full, y_full, verbose=False)
-
-# Test Predictions
-X_test = test[features].fillna(-1)
-p_lgb = np.clip(final_lgb.predict(X_test), 0, None)
-p_cat = np.clip(final_cat.predict(X_test), 0, None)
-raw_test_preds = 0.55 * p_lgb + 0.45 * p_cat
-
-# ═══════════════════════════════════════════════════════════════════════
-# 9. HIERARCHICAL RECONCILIATION (Expert Requirement)
-# ═══════════════════════════════════════════════════════════════════════
-log("9. Applying Hierarchical Reconciliation across Product Family & Region...")
-
-test_df_hier = test[['Date', 'SKU_ID', 'Product_Family', 'Region']].copy()
-test_df_hier['Base_Pred'] = raw_test_preds
-
-# Aggregate Family-Region level macro sum
-agg_fam_reg = test_df_hier.groupby(['Date', 'Product_Family', 'Region'])['Base_Pred'].transform('sum')
-# High-confidence smoothed scaling factor
-scaling_factor = np.where(agg_fam_reg > 0, 1.0, 1.0)
-test_df_hier['Reconciled_Pred'] = test_df_hier['Base_Pred'] * scaling_factor
-
-final_test_preds = np.clip(np.round(test_df_hier['Reconciled_Pred']), 0, None).astype(int)
-
-# ═══════════════════════════════════════════════════════════════════════
-# 10. PROBABILISTIC QUANTILES (P10, P50, P90)
-# ═══════════════════════════════════════════════════════════════════════
-log("10. Computing Quantile Forecasts (P10, P50, P90)...")
-
-test_q = {}
-for q_name, alpha in [('P10', 0.10), ('P50', 0.50), ('P90', 0.90)]:
-    qp = lgb_params.copy()
-    qp['objective'] = 'quantile'
-    qp['alpha'] = alpha
-    qp.pop('metric', None)
-    qm_full = lgb.train(
-        qp,
-        dtrain_full,
-        num_boost_round=model_lgb.best_iteration or 300,
-        callbacks=[lgb.log_evaluation(period=0)]
-    )
-    test_q[q_name] = np.clip(np.round(qm_full.predict(X_test)), 0, None).astype(int)
-
-# ═══════════════════════════════════════════════════════════════════════
-# 11. LIFECYCLE DOMAIN CONSTRAINTS (EOL & Planned Launches)
-# ═══════════════════════════════════════════════════════════════════════
-log("11. Enforcing EOL and new launch transition rules...")
-
-# Rule 1: No sales after EOL_Date
-if 'Months_To_EOL' in test.columns:
-    eol_mask = test['Months_To_EOL'] < 0
-    final_test_preds[eol_mask] = 0
-    test_q['P10'][eol_mask] = 0
-    test_q['P50'][eol_mask] = 0
-    test_q['P90'][eol_mask] = 0
-    log(f"  Applied EOL phaseout cutoff to {eol_mask.sum():,} rows")
-
-# Rule 2: Planned Launch Successor Demand Transfer
-# If SKU is a planned launch with Replaces_SKU, verify demand is active after launch
-planned_mask = (test['Months_Since_Launch'] >= 0) & test['Replaces_SKU'].notna() & (final_test_preds == 0)
-if planned_mask.sum() > 0:
-    final_test_preds[planned_mask] = np.clip(np.round(test.loc[planned_mask, 'Hist_Mean_Demand']), 1, None).astype(int)
-    log(f"  Inherited active demand for {planned_mask.sum():,} planned launch rows via Replaces_SKU")
-
-# ═══════════════════════════════════════════════════════════════════════
-# 12. WRITE AND VERIFY SUBMISSION
-# ═══════════════════════════════════════════════════════════════════════
-log("12. Generating submission.csv...")
-
-raw_test = pd.read_csv(PROJECT_ROOT / 'dataset' / 'student_data' / 'test.csv', low_memory=False)
-
-submission = pd.DataFrame({
-    'Date': test['Date'],
-    'SKU_ID': test['SKU_ID'],
-    'Region': test['Region'],
-    'Units_Sold_Forecast': final_test_preds
-})
-
-submission.to_csv(PROJECT_ROOT / 'submission.csv', index=False)
-log(f"  submission.csv written: {len(submission):,} rows")
-
-assert len(submission) == len(raw_test), f"Row count mismatch! {len(submission)} vs {len(raw_test)}"
-assert submission['Units_Sold_Forecast'].isna().sum() == 0, "Submission contains NaNs!"
-assert (submission['Units_Sold_Forecast'] >= 0).all(), "Submission contains negative values!"
-log("  Verification PASSED: Length matches test.csv (58,219), zero NaNs, non-negative integers!")
-
-# ═══════════════════════════════════════════════════════════════════════
-# 13. SAVE FORECAST DETAILS & COMPREHENSIVE METRICS
-# ═══════════════════════════════════════════════════════════════════════
-log("13. Saving forecast details, hierarchical reconciliation, and metrics...")
-
-forecast_detail = test[['Date', 'SKU_ID', 'Region', 'Product_Family', 'Customer_Name']].copy()
-forecast_detail['Units_Sold_Forecast'] = final_test_preds
-forecast_detail['Forecast_P10'] = test_q['P10']
-forecast_detail['Forecast_P50'] = test_q['P50']
-forecast_detail['Forecast_P90'] = test_q['P90']
-forecast_detail.to_csv(FORECAST_DIR / 'forecast_detail.csv', index=False)
-
-# Hierarchical Reconciliation Export
-hier_summary = test_df_hier.groupby(['Date', 'Product_Family', 'Region']).agg(
-    Bottom_Up_Sum=('Base_Pred', 'sum'),
-    Reconciled_Sum=('Reconciled_Pred', 'sum')
-).reset_index()
-hier_summary.to_csv(FORECAST_DIR / 'hierarchical_reconciliation.csv', index=False)
-
-# Backtest Detail
-val_data[['Date', 'SKU_ID', 'Region', 'Product_Family', TARGET,
-          'Pred_SeasNaive', 'Pred_MA6', 'Pred_LGB', 'Pred_CatBoost', 'Pred_Ensemble']].to_csv(FORECAST_DIR / 'backtest_results.csv', index=False)
-
-importance.to_csv(FORECAST_DIR / 'feature_importance.csv', index=False)
-
-metrics = {
-    'baselines': {
-        'seasonal_naive': {'wape': round(sn_wape, 4), 'bias': round(sn_bias, 4)},
-        'moving_average_6m': {'wape': round(ma_wape, 4), 'bias': round(ma_bias, 4)},
-    },
-    'individual_models': {
-        'lightgbm': {'wape': round(lgb_wape, 4), 'bias': round(lgb_bias, 4), 'mae': round(lgb_mae, 2)},
-        'catboost': {'wape': round(cat_wape, 4), 'bias': round(cat_bias, 4)},
-    },
-    'blended_ensemble': {
-        'wape': round(ens_wape, 4),
-        'bias': round(ens_bias, 4),
-        'mae': round(ens_mae, 2),
-        'blend_weights': {'lightgbm': 0.55, 'catboost': 0.45},
-        'num_features': len(features)
-    },
-    'test_forecast_summary': {
-        'rows': int(len(final_test_preds)),
-        'total_units': int(final_test_preds.sum()),
-        'mean': round(float(final_test_preds.mean()), 1),
-        'median': round(float(np.median(final_test_preds)), 1),
-        'std': round(float(final_test_preds.std()), 1),
-        'min': int(final_test_preds.min()),
-        'max': int(final_test_preds.max()),
+# ════════════════════════════════════════════════════════════════════
+# Baselines (same origin, same horizon)
+# ════════════════════════════════════════════════════════════════════
+def baselines(P, df, st):
+    rows, M, h = df['_row'].values, df['_M'].values, df['h'].values
+    sn = P.Yf[rows, M - 12 * np.ceil(h / 12).astype(int)]
+    fallback = st['r12'][rows]
+    return {
+        'Seasonal_Naive': np.nan_to_num(np.where(np.isnan(sn), fallback, sn)),
+        'Moving_Avg_12m': np.nan_to_num(fallback),
+        'Croston_SBA': np.nan_to_num(np.where(np.isnan(st['sba'][rows]), fallback, st['sba'][rows])),
     }
-}
 
-# Preserve backward compatibility key for dashboard
-metrics['lightgbm'] = metrics['blended_ensemble']
 
-with open(REPORT_DIR / 'model_metrics.json', 'w') as f:
-    json.dump(metrics, f, indent=2)
+# ════════════════════════════════════════════════════════════════════
+# 1. ROLLING-ORIGIN BACKTEST
+# ════════════════════════════════════════════════════════════════════
+def backtest(P, factor, ramp):
+    rng = np.random.default_rng(SEED)
+    out = []
+    folds = FOLDS[-1:] if FAST else FOLDS
+    for T in folds:
+        t0 = time.time()
+        tr = build_training(P, train_origins(T), max_target=T, rng=rng, sample=0.7)
+        feats = feature_columns(tr)
+        model = fit(tr, feats)
+        m10 = fit(tr, feats, 'quantile', 0.1, QROUNDS)
+        m90 = fit(tr, feats, 'quantile', 0.9, QROUNDS)
+        # evaluate on every observed (series, month) in the 19 months after T
+        rows_by_h = {h: np.where(~np.isnan(P.Y[:, T + h]))[0] for h in range(1, H + 1) if T + h <= LAST_OBS}
+        te, st = forecast_rows(P, T, rows_by_h)
+        te = align_cats(te, tr)
+        s = te['_scale'].values
+        pred = np.clip(model.predict(te[feats]), 0, None) * s
+        q10 = np.clip(m10.predict(te[feats]), 0, None) * s
+        q90 = np.clip(m90.predict(te[feats]), 0, None) * s
+        pred, q10, q90, _ = postprocess(P, te, pred, q10, q90, factor, ramp, st, T)
+        res = te[['_row', '_M', 'h']].copy()
+        res['Origin'] = int_to_ym(np.full(len(te), T) + M0)
+        res['Date'] = int_to_ym(te['_M'].values + M0)
+        res['Actual'] = P.Y[te['_row'], te['_M']]
+        res['Actual_Shipped'] = P.Ship[te['_row'], te['_M']]
+        for k, v in baselines(P, te, st).items():
+            res[k] = v
+        res['LightGBM_P50'] = pred
+        res['P10'], res['P90'] = q10, q90
+        out.append(res)
+        log(f"  fold {res['Origin'].iat[0]}: train {len(tr):,} rows | WAPE LGB {wape(res.Actual, np.round(pred)):.4f} "
+            f"| SNaive {wape(res.Actual, res.Seasonal_Naive):.4f} | MA12 {wape(res.Actual, res.Moving_Avg_12m):.4f} "
+            f"| SBA {wape(res.Actual, res.Croston_SBA):.4f} | {time.time() - t0:.0f}s")
+    bt = pd.concat(out, ignore_index=True)
+    meta = P.meta.iloc[bt['_row']].reset_index(drop=True)
+    for c in ['SKU_ID', 'Region', 'Product_Family', 'Sales_Channel', 'Customer_Name']:
+        bt[c] = meta[c].values
+    bt = bt.rename(columns={'h': 'Horizon'}).drop(columns=['_row', '_M'])
+    bt['LightGBM_P50'] = np.round(bt['LightGBM_P50'])
+    return bt, feats
 
-log("=" * 60)
-log("ADVANCED ENSEMBLE FORECASTING COMPLETE")
-log("=" * 60)
-log(f"  Blended Ensemble WAPE: {ens_wape:.4f} (LightGBM: {lgb_wape:.4f}, CatBoost: {cat_wape:.4f})")
-log(f"  Seasonal Naïve WAPE:    {sn_wape:.4f} (Ensemble improvement: {(sn_wape - ens_wape)/sn_wape*100:.1f}%)")
-log(f"  Total 19-Month Forecast Demand: {final_test_preds.sum():,} units")
+
+def metrics_table(bt):
+    models = ['Seasonal_Naive', 'Moving_Avg_12m', 'Croston_SBA', 'LightGBM_P50']
+    overall = {m: dict(wape=round(wape(bt.Actual, bt[m]), 4), bias=round(bias(bt.Actual, bt[m]), 4),
+                       mae=round(float((bt.Actual - bt[m]).abs().mean()), 2)) for m in models}
+    per_fold = {o: {m: round(wape(g.Actual, g[m]), 4) for m in models} for o, g in bt.groupby('Origin')}
+
+    def by(key):
+        return {str(k): dict(wape=round(wape(g.Actual, g.LightGBM_P50), 4), bias=round(bias(g.Actual, g.LightGBM_P50), 4),
+                             wape_snaive=round(wape(g.Actual, g.Seasonal_Naive), 4), actual_units=float(g.Actual.sum()))
+                for k, g in bt.groupby(key)}
+    cover = float(((bt.Actual >= bt.P10) & (bt.Actual <= bt.P90)).mean())
+    agg = {}
+    for lvl in ['Product_Family', 'Region', 'Sales_Channel']:
+        g = bt.groupby(['Origin', 'Date', lvl])[['Actual', 'LightGBM_P50']].sum()
+        agg[lvl] = round(wape(g.Actual, g.LightGBM_P50), 4)
+    g = bt.groupby(['Origin', 'Date'])[['Actual', 'LightGBM_P50']].sum()
+    agg['Total'] = round(wape(g.Actual, g.LightGBM_P50), 4)
+    return dict(overall=overall, per_fold=per_fold, by_horizon=by('Horizon'), by_family=by('Product_Family'),
+                by_region=by('Region'), by_channel=by('Sales_Channel'), aggregate_level_wape=agg,
+                interval_P10_P90_coverage=round(cover, 4),
+                target='Unconstrained_Demand (stockout-corrected)',
+                folds=sorted(bt['Origin'].unique().tolist()), horizon_months=H)
+
+
+# ════════════════════════════════════════════════════════════════════
+# 2. FINAL FORECAST (origin 2026-10)
+# ════════════════════════════════════════════════════════════════════
+def final_forecast(P, factor, ramp):
+    rng = np.random.default_rng(SEED + 1)
+    T = LAST_OBS
+    tr = build_training(P, train_origins(T), max_target=T, rng=rng, sample=0.7)
+    feats = feature_columns(tr)
+    log(f'  final training set: {len(tr):,} rows x {len(feats)} features')
+    model = fit(tr, feats)
+    m10 = fit(tr, feats, 'quantile', 0.1, QROUNDS)
+    m90 = fit(tr, feats, 'quantile', 0.9, QROUNDS)
+
+    test = P.test.copy()
+    test['_row'] = [P.idx[k] for k in zip(test['SKU_ID'], test['Region'])]
+    test['_M'] = (pd.Series(test['Date']).str[:4].astype(int) * 12 + test['Date'].str[5:7].astype(int) - 1 - M0).values
+    rows_by_h = {h: test.loc[test['_M'] == T + h, '_row'].values for h in range(1, H + 1)}
+    te, st = forecast_rows(P, T, rows_by_h)
+    te = align_cats(te, tr)
+    s = te['_scale'].values
+    raw = np.clip(model.predict(te[feats]), 0, None)
+    pred = raw * s
+    q10 = np.clip(m10.predict(te[feats]), 0, None) * s
+    q90 = np.clip(m90.predict(te[feats]), 0, None) * s
+    pred, q10, q90, reason = postprocess(P, te, pred.copy(), q10, q90, factor, ramp, st, T)
+    te['P50'], te['P10'], te['P90'], te['Adjustment'] = pred, q10, q90, reason
+    te['Adj_Factor'] = np.where(raw * s > 0, pred / np.maximum(raw * s, 1e-9), 0.0)
+    te['Raw_Model'] = raw
+    te['SKU_ID'] = P.meta['SKU_ID'].values[te['_row']]
+    te['Date'] = int_to_ym(te['_M'].values + M0)
+
+    fc = test.merge(te[['_row', '_M', 'P50', 'P10', 'P90', 'Adjustment']], on=['_row', '_M'], how='left')
+    assert fc['P50'].notna().all() and len(fc) == len(P.test)
+    fc['Units_Sold_Forecast'] = np.round(fc['P50']).astype(int)
+    fc['Forecast_P10'] = np.floor(fc['P10']).astype(int)
+    fc['Forecast_P90'] = np.ceil(fc['P90']).astype(int)
+    fc['Forecast_P50'] = fc['Units_Sold_Forecast']
+    # revenue: list price at the end of history x next Jan increases from the events calendar
+    price = P.train[P.train['Date'] >= '2026-01'].groupby('SKU_ID')['Unit_Price_USD'].median()
+    pinc = {'2027': 1.045, '2028': 1.045 * 1.04}
+    pr = fc['SKU_ID'].map(price)
+    pr = pr.fillna(fc['SKU_ID'].map(P.sku['Replaces_SKU']).map(price))
+    fc['Unit_Price_USD'] = (pr * fc['Date'].str[:4].map(pinc).fillna(1.0)).round(2)
+    fc['Revenue_Forecast_USD'] = (fc['Units_Sold_Forecast'] * fc['Unit_Price_USD']).round(2)
+    imp = pd.DataFrame({'feature': feats, 'importance': model.feature_importance('gain')}).sort_values('importance', ascending=False)
+    return fc, te, model, feats, imp
+
+
+def hierarchy(fc):
+    """Bottom-up aggregates for every level; integer SKU forecasts sum exactly to each node."""
+    out = []
+    levels = {'Total': [], 'Product_Family': ['Product_Family'], 'Region': ['Region'],
+              'Sales_Channel': ['Sales_Channel'], 'Customer_Name': ['Customer_Name'],
+              'Family_x_Region': ['Product_Family', 'Region']}
+    for name, keys in levels.items():
+        g = fc.groupby(['Date'] + keys)[['Units_Sold_Forecast', 'Forecast_P10', 'Forecast_P90']].sum().reset_index()
+        g['Level'] = name
+        g['Node'] = g[keys].astype(str).agg(' | '.join, axis=1) if keys else 'All'
+        g = g.rename(columns={'Units_Sold_Forecast': 'Bottom_Up_Sum'})
+        g['Reconciled_Sum'] = g['Bottom_Up_Sum']
+        out.append(g[['Level', 'Node', 'Date', 'Bottom_Up_Sum', 'Reconciled_Sum', 'Forecast_P10', 'Forecast_P90']])
+    return pd.concat(out, ignore_index=True)
+
+
+def main():
+    t0 = time.time()
+    log('Building panel ...')
+    P = Panel()
+    factor = shutdown_factor(P)
+    ramp, ramp_obs = launch_ramp(P)
+    log(f'  {len(P.keys):,} series | shutdown factor {factor:.2f} | launch ramp k0..6: '
+        f'{np.round(ramp.iloc[:7].values, 2).tolist()}')
+
+    log('Rolling-origin backtest (19-month horizon) ...')
+    bt, _ = backtest(P, factor, ramp)
+    met = metrics_table(bt)
+    for m, v in met['overall'].items():
+        log(f'  {m:<16} WAPE {v["wape"]:.4f}  bias {v["bias"]:+.4f}')
+    log(f"  P10-P90 coverage {met['interval_P10_P90_coverage']:.3f} | aggregate WAPE {met['aggregate_level_wape']}")
+    if FAST:
+        return
+
+    log('Final model (origin 2026-10) ...')
+    fc, te, model, feats, imp = final_forecast(P, factor, ramp)
+
+    sub = fc[['Date', 'SKU_ID', 'Region', 'Units_Sold_Forecast']]
+    raw_test = pd.read_csv(ROOT / 'dataset' / 'student_data' / 'test.csv')
+    assert len(sub) == len(raw_test) and sub['Units_Sold_Forecast'].ge(0).all() and sub.notna().all().all()
+    sub.to_csv(ROOT / 'submission.csv', index=False)
+
+    cols = ['Date', 'SKU_ID', 'Region', 'Product_Family', 'Business_Unit', 'Sales_Channel', 'Customer_Name',
+            'Units_Sold_Forecast', 'Forecast_P10', 'Forecast_P50', 'Forecast_P90', 'Unit_Price_USD',
+            'Revenue_Forecast_USD', 'Adjustment']
+    fc[cols].to_csv(FC / 'forecast_detail.csv', index=False)
+    hierarchy(fc).to_csv(FC / 'hierarchical_reconciliation.csv', index=False)
+    bt.to_parquet(FC / 'backtest_results.parquet', index=False)
+    imp.to_csv(FC / 'feature_importance.csv', index=False)
+    model.save_model(str(FC / 'lgb_model.txt'))
+    (FC / 'model_features.json').write_text(json.dumps(feats))
+    te.drop(columns=['P50', 'P10', 'P90']).to_parquet(FEAT / 'test_features.parquet', index=False)
+    ramp_obs.to_csv(FC / 'launch_ramp_analogs.csv', index=False)
+
+    met['test_forecast_summary'] = dict(rows=len(fc), total_units=int(fc['Units_Sold_Forecast'].sum()),
+                                        total_revenue_usd=float(fc['Revenue_Forecast_USD'].sum()),
+                                        p10_total=int(fc['Forecast_P10'].sum()), p90_total=int(fc['Forecast_P90'].sum()),
+                                        adjusted_rows=fc['Adjustment'].fillna('').ne('').groupby(
+                                            fc['Adjustment'].fillna('').str.split(':').str[0]).sum().to_dict())
+    met['domain_parameters'] = dict(shutdown_factor=round(factor, 3),
+                                    launch_ramp=[round(float(x), 3) for x in ramp.values])
+    met['model'] = dict(type='LightGBM global, direct multi-horizon', objective='L1 on scale-normalised target, weight=scale (WAPE-aligned)',
+                        features=len(feats), rounds=ROUNDS, train_rows=None, runtime_sec=round(time.time() - t0))
+    (REP / 'model_metrics.json').write_text(json.dumps(met, indent=2))
+    hist = P.train.groupby('Date')['Unconstrained_Demand'].sum()
+    log(f"Submission written: {len(sub):,} rows | 19-month total {met['test_forecast_summary']['total_units']:,} units "
+        f"(last 19 months of history: {int(hist.iloc[-19:].sum()):,}) | {time.time() - t0:.0f}s")
+
+
+if __name__ == '__main__':
+    main()

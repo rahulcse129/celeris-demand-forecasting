@@ -1,52 +1,333 @@
 {
-  "baselines": {
-    "seasonal_naive": {
-      "wape": 0.4163,
-      "bias": 0.019
+  "overall": {
+    "Seasonal_Naive": {
+      "wape": 0.3768,
+      "bias": -0.0467,
+      "mae": 17.77
     },
-    "moving_average_6m": {
-      "wape": 0.5369,
-      "bias": -0.0311
+    "Moving_Avg_12m": {
+      "wape": 0.5082,
+      "bias": -0.0479,
+      "mae": 23.96
+    },
+    "Croston_SBA": {
+      "wape": 0.5304,
+      "bias": -0.1829,
+      "mae": 25.01
+    },
+    "LightGBM_P50": {
+      "wape": 0.283,
+      "bias": -0.0694,
+      "mae": 13.34
     }
   },
-  "individual_models": {
-    "lightgbm": {
-      "wape": 0.3157,
-      "bias": 0.0102,
-      "mae": 14.7
+  "per_fold": {
+    "2023-03": {
+      "Seasonal_Naive": 0.3975,
+      "Moving_Avg_12m": 0.5167,
+      "Croston_SBA": 0.5555,
+      "LightGBM_P50": 0.302
     },
-    "catboost": {
-      "wape": 0.3,
-      "bias": -0.0432
+    "2024-03": {
+      "Seasonal_Naive": 0.3661,
+      "Moving_Avg_12m": 0.5012,
+      "Croston_SBA": 0.5272,
+      "LightGBM_P50": 0.2769
+    },
+    "2025-03": {
+      "Seasonal_Naive": 0.3678,
+      "Moving_Avg_12m": 0.5071,
+      "Croston_SBA": 0.5096,
+      "LightGBM_P50": 0.271
     }
   },
-  "blended_ensemble": {
-    "wape": 0.3058,
-    "bias": -0.013,
-    "mae": 14.24,
-    "blend_weights": {
-      "lightgbm": 0.55,
-      "catboost": 0.45
+  "by_horizon": {
+    "1": {
+      "wape": 0.2539,
+      "bias": -0.0573,
+      "wape_snaive": 0.3525,
+      "actual_units": 424209.0
     },
-    "num_features": 75
+    "2": {
+      "wape": 0.2544,
+      "bias": -0.0629,
+      "wape_snaive": 0.3586,
+      "actual_units": 434092.0
+    },
+    "3": {
+      "wape": 0.2665,
+      "bias": -0.0529,
+      "wape_snaive": 0.369,
+      "actual_units": 405883.0
+    },
+    "4": {
+      "wape": 0.2813,
+      "bias": -0.0477,
+      "wape_snaive": 0.3724,
+      "actual_units": 409150.0
+    },
+    "5": {
+      "wape": 0.28,
+      "bias": -0.0415,
+      "wape_snaive": 0.3812,
+      "actual_units": 374145.0
+    },
+    "6": {
+      "wape": 0.273,
+      "bias": -0.0602,
+      "wape_snaive": 0.3754,
+      "actual_units": 439761.0
+    },
+    "7": {
+      "wape": 0.2807,
+      "bias": -0.072,
+      "wape_snaive": 0.3773,
+      "actual_units": 434294.0
+    },
+    "8": {
+      "wape": 0.2765,
+      "bias": -0.0595,
+      "wape_snaive": 0.3738,
+      "actual_units": 417265.0
+    },
+    "9": {
+      "wape": 0.2934,
+      "bias": -0.0522,
+      "wape_snaive": 0.4044,
+      "actual_units": 379460.0
+    },
+    "10": {
+      "wape": 0.2973,
+      "bias": -0.0341,
+      "wape_snaive": 0.3823,
+      "actual_units": 397861.0
+    },
+    "11": {
+      "wape": 0.2947,
+      "bias": -0.0389,
+      "wape_snaive": 0.3817,
+      "actual_units": 382940.0
+    },
+    "12": {
+      "wape": 0.281,
+      "bias": -0.0763,
+      "wape_snaive": 0.3592,
+      "actual_units": 440974.0
+    },
+    "13": {
+      "wape": 0.2847,
+      "bias": -0.0872,
+      "wape_snaive": 0.3822,
+      "actual_units": 444341.0
+    },
+    "14": {
+      "wape": 0.2822,
+      "bias": -0.0921,
+      "wape_snaive": 0.3796,
+      "actual_units": 452685.0
+    },
+    "15": {
+      "wape": 0.2896,
+      "bias": -0.0819,
+      "wape_snaive": 0.3803,
+      "actual_units": 420669.0
+    },
+    "16": {
+      "wape": 0.3047,
+      "bias": -0.0807,
+      "wape_snaive": 0.3889,
+      "actual_units": 426953.0
+    },
+    "17": {
+      "wape": 0.2997,
+      "bias": -0.0806,
+      "wape_snaive": 0.3926,
+      "actual_units": 391949.0
+    },
+    "18": {
+      "wape": 0.2902,
+      "bias": -0.0973,
+      "wape_snaive": 0.3798,
+      "actual_units": 463139.0
+    },
+    "19": {
+      "wape": 0.2957,
+      "bias": -0.1222,
+      "wape_snaive": 0.3733,
+      "actual_units": 464419.0
+    }
   },
+  "by_family": {
+    "Brake & Safety Systems": {
+      "wape": 0.2709,
+      "bias": -0.0528,
+      "wape_snaive": 0.3597,
+      "actual_units": 1463236.0
+    },
+    "Chassis & Structural": {
+      "wape": 0.2857,
+      "bias": -0.1026,
+      "wape_snaive": 0.3723,
+      "actual_units": 1202098.0
+    },
+    "Electrical Assemblies": {
+      "wape": 0.3031,
+      "bias": -0.0841,
+      "wape_snaive": 0.4095,
+      "actual_units": 790582.0
+    },
+    "Hydraulic Systems": {
+      "wape": 0.2971,
+      "bias": -0.0585,
+      "wape_snaive": 0.4039,
+      "actual_units": 950935.0
+    },
+    "Powertrain Components": {
+      "wape": 0.274,
+      "bias": -0.0293,
+      "wape_snaive": 0.3662,
+      "actual_units": 1084742.0
+    },
+    "Precision Machined Parts": {
+      "wape": 0.282,
+      "bias": -0.0544,
+      "wape_snaive": 0.3755,
+      "actual_units": 1282456.0
+    },
+    "Thermal Management": {
+      "wape": 0.2799,
+      "bias": -0.1066,
+      "wape_snaive": 0.3703,
+      "actual_units": 1230140.0
+    }
+  },
+  "by_region": {
+    "Asia Pacific": {
+      "wape": 0.2663,
+      "bias": -0.0648,
+      "wape_snaive": 0.3589,
+      "actual_units": 1481965.0
+    },
+    "Europe": {
+      "wape": 0.2576,
+      "bias": -0.0609,
+      "wape_snaive": 0.3414,
+      "actual_units": 1515426.0
+    },
+    "India": {
+      "wape": 0.2954,
+      "bias": -0.0578,
+      "wape_snaive": 0.3849,
+      "actual_units": 1446434.0
+    },
+    "Latin America": {
+      "wape": 0.312,
+      "bias": -0.097,
+      "wape_snaive": 0.4166,
+      "actual_units": 1313688.0
+    },
+    "Middle East & Africa": {
+      "wape": 0.3526,
+      "bias": -0.1045,
+      "wape_snaive": 0.4757,
+      "actual_units": 729117.0
+    },
+    "North America": {
+      "wape": 0.2543,
+      "bias": -0.0526,
+      "wape_snaive": 0.3399,
+      "actual_units": 1517559.0
+    }
+  },
+  "by_channel": {
+    "Aftermarket": {
+      "wape": 0.2727,
+      "bias": -0.0932,
+      "wape_snaive": 0.3525,
+      "actual_units": 1220747.0
+    },
+    "Direct OEM": {
+      "wape": 0.2768,
+      "bias": -0.0566,
+      "wape_snaive": 0.3669,
+      "actual_units": 3305277.0
+    },
+    "Export": {
+      "wape": 0.3074,
+      "bias": -0.0729,
+      "wape_snaive": 0.4102,
+      "actual_units": 893155.0
+    },
+    "Tier-1 Distributor": {
+      "wape": 0.2874,
+      "bias": -0.0733,
+      "wape_snaive": 0.3894,
+      "actual_units": 2585010.0
+    }
+  },
+  "aggregate_level_wape": {
+    "Product_Family": 0.0956,
+    "Region": 0.0905,
+    "Sales_Channel": 0.0892,
+    "Total": 0.0879
+  },
+  "interval_P10_P90_coverage": 0.751,
+  "target": "Unconstrained_Demand (stockout-corrected)",
+  "folds": [
+    "2023-03",
+    "2024-03",
+    "2025-03"
+  ],
+  "horizon_months": 19,
   "test_forecast_summary": {
     "rows": 58219,
-    "total_units": 2657218,
-    "mean": 45.6,
-    "median": 38.0,
-    "std": 34.4,
-    "min": 0,
-    "max": 494
+    "total_units": 2725863,
+    "total_revenue_usd": 2449641707.17,
+    "p10_total": 1815973,
+    "p90_total": 3910629,
+    "adjusted_rows": {
+      "": 0,
+      "after EOL / before launch -> 0": 156,
+      "customer shutdown x0.24 (Nexon strike analog)": 124,
+      "launch": 117
+    }
   },
-  "lightgbm": {
-    "wape": 0.3058,
-    "bias": -0.013,
-    "mae": 14.24,
-    "blend_weights": {
-      "lightgbm": 0.55,
-      "catboost": 0.45
-    },
-    "num_features": 75
+  "domain_parameters": {
+    "shutdown_factor": 0.237,
+    "launch_ramp": [
+      0.239,
+      0.352,
+      0.521,
+      0.601,
+      0.719,
+      0.737,
+      0.92,
+      0.95,
+      0.988,
+      0.931,
+      1.021,
+      1.041,
+      1.076,
+      0.907,
+      0.937,
+      0.88,
+      0.965,
+      0.918,
+      0.925,
+      0.925,
+      0.925,
+      0.925,
+      0.925,
+      0.925,
+      0.925
+    ]
+  },
+  "model": {
+    "type": "LightGBM global, direct multi-horizon",
+    "objective": "L1 on scale-normalised target, weight=scale (WAPE-aligned)",
+    "features": 60,
+    "rounds": 900,
+    "train_rows": null,
+    "runtime_sec": 1124
   }
 }

@@ -1,279 +1,159 @@
 """
-Anomaly Detection & Analysis for MKS Hackathon.
-Usage: python src/anomalies.py
+Stage 2 - Anomaly register: separate ERRORS (fixed in clean.py) from REAL EVENTS (modelled/excluded).
 
-Reads cleaned data from data/cleaned/
-Writes anomaly register to reports/anomaly_register.csv
+    python src/anomalies.py   ->  reports/anomaly_register.csv, reports/anomaly_summary.json
+
+Every flag carries a classification and the exact action the forecaster takes, so the register is
+consistent with the model (same masks are used in features.Panel).
 """
-
-import os
+import json
 import sys
 import warnings
 from pathlib import Path
 
-import pandas as pd
 import numpy as np
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / 'src'))
+from features import LAST_OBS, M0, Panel, col, intermittency  # noqa: E402
+from utils import int_to_ym  # noqa: E402
 
 warnings.filterwarnings('ignore')
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / 'src'))
-
-CLEAN_DIR = PROJECT_ROOT / 'data' / 'cleaned'
-REPORT_DIR = PROJECT_ROOT / 'reports'
-
-
-def log(msg):
-    from datetime import datetime
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+REP = ROOT / 'reports'
+P = Panel()
+tr = P.train
+meta = P.meta
+DATES = int_to_ym(np.arange(LAST_OBS + 1) + M0)
+reg = []
 
 
-log("Loading cleaned data...")
-train = pd.read_csv(CLEAN_DIR / 'train_clean.csv')
-stockouts = pd.read_csv(CLEAN_DIR / 'inventory_stockouts_clean.csv')
-events = pd.read_csv(CLEAN_DIR / 'events_calendar_clean.csv')
-sku_master = pd.read_csv(CLEAN_DIR / 'sku_master_clean.csv')
+def add(rows, months, atype, cls, reason, action, expected=None):
+    for k, (i, m) in enumerate(zip(rows, months)):
+        reg.append(dict(Date=DATES[m], SKU_ID=meta['SKU_ID'].iat[i], Region=meta['Region'].iat[i],
+                        Product_Family=meta['Product_Family'].iat[i], Customer_Name=meta['Customer_Name'].iat[i],
+                        Units_Sold=P.Ship[i, m], Unconstrained_Demand=P.Y[i, m],
+                        Expected_Level=None if expected is None else round(float(expected[k]), 1),
+                        Anomaly_Type=atype, Classification=cls,
+                        Reason=reason if isinstance(reason, str) else reason[k], Action=action))
 
-anomaly_register = []
 
+Y = P.Y[:, :LAST_OBS + 1]
+lvl = pd.DataFrame(np.where(Y > 0, Y, np.nan).T).rolling(13, center=True, min_periods=3).median().T.values
 
-# ═══════════════════════════════════════════════════════════════════════
-# 1. STATISTICAL OUTLIER DETECTION (IQR per SKU-Region)
-# ═══════════════════════════════════════════════════════════════════════
-log("1. Statistical outlier detection (IQR method)...")
+# 1. one-off orders (real, non-recurring) -----------------------------------------------
+r, m = np.where(P.spike[:, :LAST_OBS + 1])
+add(r, m, 'One-off order spike', 'Real event', [f'{Y[i, j] / lvl[i, j]:.1f}x the series level' for i, j in zip(r, m)],
+    'Kept in history; capped at 4x level for model training', lvl[r, m])
 
-for (sku, region), grp in train.groupby(['SKU_ID', 'Region']):
-    if len(grp) < 6:
+# 2. stockouts, back-order catch-up, unlisted chip-shortage months ------------------------
+key = {k: i for i, k in enumerate(zip(meta['SKU_ID'], meta['Region']))}
+for flag, atype, action in [
+        (tr['Is_Stockout'], 'Stockout (listed)', 'Unconstrained demand = Requested_Units'),
+        (tr['Demand_Adjustment'].eq('back-order catch-up removed'), 'Back-order catch-up',
+         'Previous month back-orders removed from demand'),
+        (tr['Demand_Adjustment'].str.startswith('unlisted'), 'Stockout (not in stockout file)',
+         'Demand = shipments / regional fill rate; window excluded from training')]:
+    s = tr[flag]
+    rows = [key[k] for k in zip(s['SKU_ID'], s['Region'])]
+    months = (s['Date'].str[:4].astype(int) * 12 + s['Date'].str[5:7].astype(int) - 1 - M0).values
+    reason = (s['Reason'].fillna('Semiconductor allocation (EV-019)') + ', fill rate ' +
+              s['Fill_Rate_Pct'].round(0).astype('Int64').astype(str).str.replace('<NA>', 'n/a') + '%').values
+    add(rows, months, atype, 'Real event', reason, action)
+
+# 3. COVID disruption: months where a series fell below 60% of its level ---------------------
+for i, j in zip(*np.where(P.no_feat[:, :LAST_OBS + 1] & (P.shutdown[:, :LAST_OBS + 1] == 0))):
+    if Y[i, j] < 0.6 * lvl[i, j]:
+        add([i], [j], 'Disruption (COVID-19 lockdown)', 'Real event', 'Regional lockdown (events calendar)',
+            'Excluded from training targets and level features', [lvl[i, j]])
+
+# 4. customer events -----------------------------------------------------------------------
+r, m = np.where(P.shutdown[:, :LAST_OBS + 1] > 0)
+add(r, m, 'Customer event (strike)', 'Real event', 'Nexon Motor Group Europe labour strike (EV-038)',
+    'Excluded from training; used as analog for Orion NA shutdown 2027-07..08', lvl[r, m])
+h = np.where((meta['Customer_Name'] == 'Helios Auto Parts') & (meta['Region'] == 'India'))[0]
+pre = np.nanmean(Y[h, col('2024-09'):col('2025-09')])
+post = np.nanmean(Y[h, col('2025-09'):])
+add(h, [col('2025-09')] * len(h), 'Structural break (capacity step-up)', 'Real event',
+    f'Helios second Indian line (EV-052): +{(post / pre - 1) * 100:.0f}% level shift',
+    'Kept; recent-level features carry the new level forward')
+
+# 5. pre-buy before the announced 9% price rise ------------------------------------------------
+tot = pd.Series(np.nansum(Y, 0), DATES)
+norm = tot / tot.rolling(13, center=True, min_periods=7).median()
+for d in ['2022-11', '2022-12', '2023-01', '2023-02']:
+    reg.append(dict(Date=d, SKU_ID='ALL', Region='ALL', Product_Family='ALL', Customer_Name='ALL',
+                    Units_Sold=None, Unconstrained_Demand=float(tot[d]), Expected_Level=None,
+                    Anomaly_Type='Pre-buy / payback (9% price rise)', Classification='Real event',
+                    Reason=f'Total demand {norm[d]:.2f}x trend (announcement EV-030)',
+                    Action='Excluded from training targets (smaller 2027/28 rises showed no pre-buy)'))
+
+# 6. Red Sea export delay ----------------------------------------------------------------------------
+ex = meta['Sales_Channel'].values == 'Export'
+for d in ['2024-01', '2024-02', '2024-03']:
+    j = col(d)
+    reg.append(dict(Date=d, SKU_ID='ALL', Region='ALL', Product_Family='ALL', Customer_Name='Export channel',
+                    Units_Sold=None, Unconstrained_Demand=float(np.nansum(Y[ex, j])), Expected_Level=None,
+                    Anomaly_Type='Logistics delay (Red Sea)', Classification='Real event',
+                    Reason='Export shipments delayed then caught up (EV-039)', Action='Excluded from training targets'))
+
+# 7. missing rows (not zeros) ------------------------------------------------------------------------
+obs = ~np.isnan(Y)
+first = obs.argmax(1)
+last = LAST_OBS - obs[:, ::-1].argmax(1)
+for i in range(len(meta)):
+    if not obs[i].any():
         continue
-    q1 = grp['Units_Sold'].quantile(0.25)
-    q3 = grp['Units_Sold'].quantile(0.75)
-    iqr = q3 - q1
-    if iqr == 0:
+    gaps = np.where(~obs[i, first[i]:last[i] + 1])[0] + first[i]
+    for j in gaps:
+        erp = meta['Region'].iat[i] == 'Latin America' and '2023-03' <= DATES[j] <= '2023-05'
+        add([i], [j], 'Missing row', 'Missing data',
+            'Latin America ERP migration (EV-033)' if erp else 'No row in extract (and not a zero)',
+            'Left as missing - never imputed as 0')
+
+# 8. order-cycle changes, customer switches, lost accounts -------------------------------------------
+ic = intermittency(P)
+chg = ic[(ic['Order_Cycle_Months'] != ic['Previous_Cycle_Months']) & ic['Previous_Cycle_Months'].notna()]
+for _, c in chg.iterrows():
+    i = key[(c['SKU_ID'], c['Region'])]
+    add([i], [LAST_OBS - 23], 'Ordering-cycle change', 'Real event',
+        f"Order every {int(c['Previous_Cycle_Months'])} -> every {int(c['Order_Cycle_Months'])} month(s)",
+        'Phase features use only the latest 12 months')
+cs = tr.sort_values('Date')[['SKU_ID', 'Region', 'Date', 'Customer_Name']]
+cs['prev'] = cs.groupby(['SKU_ID', 'Region'])['Customer_Name'].shift()
+sw = cs[cs['prev'].notna() & (cs['prev'] != cs['Customer_Name'])]
+sw = sw.groupby(['SKU_ID', 'Region', 'prev', 'Customer_Name']).head(1)
+for _, s in sw.iterrows():
+    i = key[(s['SKU_ID'], s['Region'])]
+    j = col(s['Date'])
+    add([i], [j], 'Customer switch', 'Real event', f"{s['prev']} -> {s['Customer_Name']}",
+        'Latest customer used as feature; history kept (demand continues)')
+for i in np.where(obs.any(1) & (last < LAST_OBS - 6))[0]:
+    if P.eol[i] <= last[i] + 1:
         continue
-    lower = q1 - 3.0 * iqr
-    upper = q3 + 3.0 * iqr
-    outliers = grp[(grp['Units_Sold'] < lower) | (grp['Units_Sold'] > upper)]
-    for _, row in outliers.iterrows():
-        anomaly_register.append({
-            'Date': row['Date'],
-            'SKU_ID': sku,
-            'Region': region,
-            'Units_Sold': row['Units_Sold'],
-            'Anomaly_Type': 'Statistical Outlier (IQR)',
-            'Lower_Bound': round(lower, 1),
-            'Upper_Bound': round(upper, 1),
-            'Reason': 'Outside 3×IQR range',
-            'Action': 'Flag for review',
-            'Category': 'Unknown'
-        })
+    add([i], [last[i]], 'Lost account / series ended', 'Real event',
+        'No orders after this month and no EOL in master', 'Not forecast unless present in test.csv')
 
-log(f"  Found {len(anomaly_register)} IQR outliers")
+# 9. master data vs transactions -------------------------------------------------------------------
+c = tr[tr['Lifecycle_Conflict'] != '']
+add([key[k] for k in zip(c['SKU_ID'], c['Region'])], [col(d) for d in c['Date']],
+    'Master data conflict', 'Master data conflict', c['Lifecycle_Conflict'].map(
+        {'before_launch': 'Sale before sku_master Launch_Date', 'after_EOL': 'Sale after EOL'}).values,
+    'Transactions kept as evidence; master flagged for correction')
 
+# 10. remaining statistical outliers (robust z on log scale), not explained above ----------------------
+flagged = {(a['SKU_ID'], a['Region'], a['Date']) for a in reg}
+with np.errstate(all='ignore'):
+    z = np.abs(np.log1p(Y) - np.log1p(lvl)) / 0.35
+cand = (z > 4) & (Y > 0) & ~P.spike[:, :LAST_OBS + 1]
+for i, j in zip(*np.where(cand)):
+    if (meta['SKU_ID'].iat[i], meta['Region'].iat[i], DATES[j]) not in flagged:
+        add([i], [j], 'Statistical outlier (unexplained)', 'Unexplained',
+            f'{Y[i, j] / lvl[i, j]:.2f}x rolling median', 'Kept; L1 loss limits its influence', [lvl[i, j]])
 
-# ═══════════════════════════════════════════════════════════════════════
-# 2. STRUCTURAL BREAKS (COVID, Chip Shortage, Inflation)
-# ═══════════════════════════════════════════════════════════════════════
-log("2. Detecting structural breaks...")
-
-# Monthly totals
-monthly_total = train.groupby('Date')['Units_Sold'].sum().reset_index()
-monthly_total = monthly_total.sort_values('Date')
-monthly_total['Pct_Change'] = monthly_total['Units_Sold'].pct_change()
-
-# Large month-over-month drops
-for _, row in monthly_total.iterrows():
-    if pd.notna(row['Pct_Change']):
-        if row['Pct_Change'] < -0.3:
-            anomaly_register.append({
-                'Date': row['Date'],
-                'SKU_ID': 'ALL',
-                'Region': 'ALL',
-                'Units_Sold': row['Units_Sold'],
-                'Anomaly_Type': 'Structural Break - Demand Drop',
-                'Lower_Bound': None,
-                'Upper_Bound': None,
-                'Reason': f"{row['Pct_Change']*100:.1f}% month-over-month drop",
-                'Action': 'Model as event (COVID/disruption)',
-                'Category': 'Real Event'
-            })
-        elif row['Pct_Change'] > 0.5:
-            anomaly_register.append({
-                'Date': row['Date'],
-                'SKU_ID': 'ALL',
-                'Region': 'ALL',
-                'Units_Sold': row['Units_Sold'],
-                'Anomaly_Type': 'Structural Break - Demand Surge',
-                'Lower_Bound': None,
-                'Upper_Bound': None,
-                'Reason': f"+{row['Pct_Change']*100:.1f}% month-over-month surge",
-                'Action': 'Model as recovery/event',
-                'Category': 'Real Event'
-            })
-
-log(f"  Total anomalies after structural breaks: {len(anomaly_register)}")
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# 3. PRE-BUY BEFORE PRICE INCREASES
-# ═══════════════════════════════════════════════════════════════════════
-log("3. Detecting pre-buy patterns before price changes...")
-
-price_events = events[events['Event_Type'].str.contains('Price', case=False, na=False)]
-for _, evt in price_events.iterrows():
-    start = evt['Start_Date']
-    if not isinstance(start, str) or len(start) < 7:
-        continue
-    # Look at 1-2 months before the price change
-    year, month = int(start[:4]), int(start[5:7])
-    for offset in [1, 2]:
-        pre_m = month - offset
-        pre_y = year
-        if pre_m <= 0:
-            pre_m += 12
-            pre_y -= 1
-        pre_date = f"{pre_y}-{pre_m:02d}"
-        # Check if demand in that month was above normal
-        pre_demand = train[train['Date'] == pre_date]
-        if len(pre_demand) == 0:
-            continue
-        total_pre = pre_demand['Units_Sold'].sum()
-        # Compare with same month prior year
-        compare_date = f"{pre_y-1}-{pre_m:02d}"
-        compare_demand = train[train['Date'] == compare_date]['Units_Sold'].sum()
-        if compare_demand > 0 and total_pre / compare_demand > 1.3:
-            anomaly_register.append({
-                'Date': pre_date,
-                'SKU_ID': 'ALL',
-                'Region': evt.get('Scope_Value', 'ALL'),
-                'Units_Sold': total_pre,
-                'Anomaly_Type': 'Pre-Buy Pattern',
-                'Lower_Bound': None,
-                'Upper_Bound': None,
-                'Reason': f"Pre-buy before price change ({evt['Description'][:60]})",
-                'Action': 'Model as event-driven demand',
-                'Category': 'Real Event'
-            })
-
-log(f"  Total anomalies after pre-buy: {len(anomaly_register)}")
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# 4. STOCKOUT PERIODS (constrained supply)
-# ═══════════════════════════════════════════════════════════════════════
-log("4. Flagging stockout periods...")
-
-for _, row in stockouts.iterrows():
-    anomaly_register.append({
-        'Date': row['Date'],
-        'SKU_ID': row['SKU_ID'],
-        'Region': row['Region'],
-        'Units_Sold': row.get('Shipped_Units', None),
-        'Anomaly_Type': 'Supply Constraint / Stockout',
-        'Lower_Bound': None,
-        'Upper_Bound': row.get('Requested_Units', None),
-        'Reason': f"Stockout: {row.get('Reason', 'Unknown')}; Fill rate: {row.get('Fill_Rate_Pct', '?')}%",
-        'Action': 'Use Requested_Units as unconstrained demand',
-        'Category': 'Real Event'
-    })
-
-log(f"  Total anomalies after stockouts: {len(anomaly_register)}")
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# 5. LIFECYCLE VIOLATIONS
-# ═══════════════════════════════════════════════════════════════════════
-log("5. Checking lifecycle violations...")
-
-# Sales after EOL
-eol_skus = sku_master[sku_master['EOL_Date'].notna() & (sku_master['EOL_Date'] != '')][['SKU_ID', 'EOL_Date']]
-if len(eol_skus) > 0:
-    train_with_eol = train.merge(eol_skus, on='SKU_ID', how='inner', suffixes=('', '_master'))
-    if 'EOL_Date_master' in train_with_eol.columns:
-        after_eol = train_with_eol[train_with_eol['Date'] > train_with_eol['EOL_Date_master']]
-    elif 'EOL_Date' in train_with_eol.columns:
-        after_eol = train_with_eol[train_with_eol['Date'] > train_with_eol['EOL_Date']]
-    else:
-        after_eol = pd.DataFrame()
-    
-    for _, row in after_eol.iterrows():
-        anomaly_register.append({
-            'Date': row['Date'],
-            'SKU_ID': row['SKU_ID'],
-            'Region': row['Region'],
-            'Units_Sold': row['Units_Sold'],
-            'Anomaly_Type': 'Lifecycle Violation - After EOL',
-            'Lower_Bound': None,
-            'Upper_Bound': None,
-            'Reason': 'Sales recorded after End-of-Life date',
-            'Action': 'Investigate; may be aftermarket/spares',
-            'Category': 'Error'
-        })
-
-log(f"  Total anomalies after lifecycle: {len(anomaly_register)}")
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# 6. ZERO-DEMAND MONTHS ANALYSIS
-# ═══════════════════════════════════════════════════════════════════════
-log("6. Analyzing zero-demand patterns...")
-
-zero_months = train[train['Units_Sold'] == 0]
-log(f"  Zero-demand rows: {len(zero_months):,} ({100*len(zero_months)/len(train):.1f}% of clean train)")
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# 7. CUSTOMER SWITCHES
-# ═══════════════════════════════════════════════════════════════════════
-log("7. Detecting customer switches...")
-
-sku_region_customers = train.groupby(['SKU_ID', 'Region', 'Date'])['Customer_Name'].first().reset_index()
-sku_region_customers = sku_region_customers.sort_values(['SKU_ID', 'Region', 'Date'])
-
-# Detect when customer changes for a SKU-Region
-switches = []
-for (sku, region), grp in sku_region_customers.groupby(['SKU_ID', 'Region']):
-    customers = grp['Customer_Name'].values
-    dates = grp['Date'].values
-    for i in range(1, len(customers)):
-        if customers[i] != customers[i-1] and pd.notna(customers[i]) and pd.notna(customers[i-1]):
-            switches.append({
-                'Date': dates[i],
-                'SKU_ID': sku,
-                'Region': region,
-                'From_Customer': customers[i-1],
-                'To_Customer': customers[i],
-            })
-            anomaly_register.append({
-                'Date': dates[i],
-                'SKU_ID': sku,
-                'Region': region,
-                'Units_Sold': None,
-                'Anomaly_Type': 'Customer Switch',
-                'Lower_Bound': None,
-                'Upper_Bound': None,
-                'Reason': f"Customer changed: {customers[i-1]} → {customers[i]}",
-                'Action': 'May affect demand pattern',
-                'Category': 'Real Event'
-            })
-
-log(f"  Customer switches found: {len(switches)}")
-log(f"  Total anomalies: {len(anomaly_register)}")
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# 8. SAVE ANOMALY REGISTER
-# ═══════════════════════════════════════════════════════════════════════
-log("Saving anomaly register...")
-
-anomaly_df = pd.DataFrame(anomaly_register)
-anomaly_df.to_csv(REPORT_DIR / 'anomaly_register.csv', index=False)
-
-log(f"  Saved {len(anomaly_df)} anomalies to {REPORT_DIR / 'anomaly_register.csv'}")
-
-# Summary
-log("=" * 60)
-log("ANOMALY DETECTION COMPLETE")
-log("=" * 60)
-type_counts = anomaly_df['Anomaly_Type'].value_counts()
-for atype, count in type_counts.items():
-    log(f"  {atype}: {count}")
+out = pd.DataFrame(reg)
+out.to_csv(REP / 'anomaly_register.csv', index=False)
+summary = out.groupby(['Classification', 'Anomaly_Type']).size().rename('rows').reset_index()
+(REP / 'anomaly_summary.json').write_text(json.dumps(summary.to_dict('records'), indent=2))
+print(summary.to_string(index=False))
+print(f'Total flags: {len(out):,}')

@@ -1,214 +1,421 @@
 {
-  "pipeline_run": "2026-11-21T01:14:36.932416",
-  "files": {
-    "train_raw": {
-      "raw_rows": 248248,
-      "raw_columns": [
-        "Record_ID",
-        "Date",
-        "Year",
-        "Month",
-        "Product_Family",
-        "Business_Unit",
-        "SKU_ID",
-        "SKU_Description",
-        "Customer_Name",
-        "Sales_Channel",
-        "Region",
-        "Units_Sold",
-        "Unit_Price_USD",
-        "Revenue_USD",
-        "Load_Timestamp"
-      ],
-      "null_counts": {
-        "Record_ID": 0,
-        "Date": 0,
-        "Year": 0,
-        "Month": 0,
+  "pipeline_run": "2026-11-25T16:04:18",
+  "raw_profile": {
+    "train": {
+      "rows": 248248,
+      "columns": 15,
+      "null_cells": {
         "Product_Family": 1252,
-        "Business_Unit": 0,
-        "SKU_ID": 0,
         "SKU_Description": 996,
-        "Customer_Name": 0,
-        "Sales_Channel": 0,
-        "Region": 952,
+        "Region": 745,
         "Units_Sold": 3362,
-        "Unit_Price_USD": 0,
-        "Revenue_USD": 383,
-        "Load_Timestamp": 0
+        "Revenue_USD": 383
       },
-      "blank_counts": {
-        "Record_ID": 0,
-        "Date": 0,
-        "Year": 0,
-        "Month": 0,
-        "Product_Family": 1252,
-        "Business_Unit": 0,
-        "SKU_ID": 0,
-        "SKU_Description": 996,
-        "Customer_Name": 0,
-        "Sales_Channel": 0,
-        "Region": 952,
-        "Units_Sold": 3362,
-        "Unit_Price_USD": 0,
-        "Revenue_USD": 383,
-        "Load_Timestamp": 0
+      "duplicate_rows": 2946
+    },
+    "test": {
+      "rows": 58219,
+      "columns": 10,
+      "null_cells": {},
+      "duplicate_rows": 0
+    },
+    "sku_master": {
+      "rows": 601,
+      "columns": 10,
+      "null_cells": {
+        "EOL_Date": 592,
+        "Replaces_SKU": 592
       },
-      "unique_counts": {
-        "Record_ID": 244566,
-        "Date": 667,
-        "Year": 8,
-        "Month": 12,
-        "Product_Family": 7,
-        "Business_Unit": 5,
-        "SKU_ID": 2659,
-        "SKU_Description": 598,
-        "Customer_Name": 220,
-        "Sales_Channel": 17,
-        "Region": 29,
-        "Units_Sold": 907,
-        "Unit_Price_USD": 5633,
-        "Revenue_USD": 154737,
-        "Load_Timestamp": 239221
-      }
+      "duplicate_rows": 0
     },
     "macro_indicators": {
       "rows": 114,
-      "null_values_found": 5,
-      "date_range": "2019-01 to 2028-05",
-      "action": "Interpolated missing values"
+      "columns": 11,
+      "null_cells": {
+        "Vehicle_Inventory_Days": 1,
+        "New_Vehicle_Orders_Index": 1,
+        "Industrial_Util_Rate_Pct": 1,
+        "Fuel_Price_Index": 1,
+        "EV_Adoption_Index": 1
+      },
+      "duplicate_rows": 0
     },
-    "train_cleaned": {
-      "clean_rows": 243624,
-      "unique_dates": 94,
-      "date_range": "2019-01 to 2026-10",
-      "unique_skus": 2657,
-      "unique_regions": 6,
-      "regions": [
-        "Asia Pacific",
-        "Europe",
-        "India",
-        "Latin America",
-        "Middle East & Africa",
-        "North America"
-      ],
-      "unique_customers": 12,
-      "unique_channels": 4,
-      "unique_families": 7,
-      "families": [
-        "Brake & Safety Systems",
-        "Chassis & Structural",
-        "Electrical Assemblies",
-        "Hydraulic Systems",
-        "Powertrain Components",
-        "Precision Machined Parts",
-        "Thermal Management"
-      ]
+    "events_calendar": {
+      "rows": 68,
+      "columns": 7,
+      "null_cells": {
+        "End_Date": 1
+      },
+      "duplicate_rows": 0
     },
-    "test_cleaned": {
-      "clean_rows": 58219,
-      "unique_dates": 19,
-      "date_range": "2026-11 to 2028-05"
+    "inventory_stockouts": {
+      "rows": 5830,
+      "columns": 11,
+      "null_cells": {},
+      "duplicate_rows": 0
     }
-  },
-  "summary": {
-    "total_issues_found": 13,
-    "total_rows_raw": 248248,
-    "total_rows_clean": 243624,
-    "rows_removed": 4624,
-    "cleaning_pipeline": "src/clean.py",
-    "output_directory": "F:\\Project\\IMS-KS\\data\\cleaned"
   },
   "issues": [
     {
-      "type": "date_format_inconsistency",
+      "file": "train.csv",
+      "issue_type": "date_format_inconsistent",
       "rows_affected": 9967,
-      "action": "Parsed all dates to YYYY-MM format"
+      "action": "Parsed 6 alternative formats (YYYY/MM, Mon-YYYY, MM-YYYY, ...) to YYYY-MM",
+      "classification": "error"
     },
     {
-      "type": "future_dates_fixed",
+      "file": "train.csv",
+      "issue_type": "date_year_typo",
       "rows_affected": 30,
-      "action": "Fixed year 2062\u21922026 (digit swap); dropped any remaining future dates"
+      "action": "Year '2062' is a digit swap of 2026 - confirmed by Load_Timestamp (month before load = same month, 2026)",
+      "classification": "error",
+      "verified_by_load_timestamp": 30
     },
     {
-      "type": "region_inconsistency",
-      "variants_before": 29,
-      "variants_after": 6,
-      "blank_regions": 952,
-      "action": "Mapped 29 variants to 6 clean regions"
+      "file": "train.csv",
+      "issue_type": "year_month_disagree_with_date",
+      "rows_affected": 246,
+      "action": "Business rule 1: Year/Month rebuilt from authoritative Date",
+      "classification": "error"
     },
     {
-      "type": "channel_inconsistency",
+      "file": "train.csv",
+      "issue_type": "sku_id_format",
+      "rows_affected": 3741,
+      "action": "Normalised case/whitespace/separator/zero-padding ('pmp_23', 'CSS31' -> 'PMP-023', 'CSS-031')",
+      "classification": "error"
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "sku_not_in_master",
+      "rows_affected": 0,
+      "action": "Dropped (cannot be mapped to a product)",
+      "classification": "error"
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "region_label_variant",
+      "rows_affected": 6199,
+      "action": "Mapped 30 raw variants to 6 canonical Region values",
+      "classification": "error",
+      "variants_before": 30,
+      "variants_after": 6
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "channel_label_variant",
+      "rows_affected": 3745,
+      "action": "Mapped 17 raw variants to 4 canonical Sales_Channel values",
+      "classification": "error",
       "variants_before": 17,
-      "variants_after": 4,
-      "action": "Mapped 17 variants to 4 clean channels"
+      "variants_after": 4
     },
     {
-      "type": "customer_name_typos",
+      "file": "train.csv",
+      "issue_type": "customer_name_variant",
+      "rows_affected": 2490,
+      "action": "Mapped 220 raw variants to 12 canonical Customer_Name values",
+      "classification": "error",
       "variants_before": 220,
-      "variants_after": 12,
-      "action": "Fuzzy-matched 220 variants to 12 clean names"
+      "variants_after": 12
     },
     {
-      "type": "blank_product_family",
+      "file": "sku_master.csv",
+      "issue_type": "business_unit_contradicts_family",
+      "rows_affected": 1,
+      "action": "Family maps to one BU in all transactions; master rows disagreeing were corrected",
+      "classification": "master_data_conflict",
+      "skus": [
+        "PMP-004"
+      ]
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "product_family_missing",
       "rows_affected": 1252,
-      "action": "Inferred from SKU_ID prefix"
+      "action": "Filled from sku_master by SKU_ID",
+      "classification": "error"
     },
     {
-      "type": "numeric_conversion_errors",
-      "rows_affected": 3624,
-      "action": "Coerced to numeric; NaN where unparseable"
+      "file": "train.csv",
+      "issue_type": "business_unit_missing",
+      "rows_affected": 0,
+      "action": "Filled from sku_master by SKU_ID",
+      "classification": "error"
     },
     {
-      "type": "duplicate_record_ids",
-      "rows_removed": 3682,
-      "rows_before": 248248,
-      "rows_after": 244566,
-      "action": "Kept row with latest Load_Timestamp per Record_ID"
+      "file": "train.csv",
+      "issue_type": "sku_description_missing",
+      "rows_affected": 996,
+      "action": "Filled from sku_master by SKU_ID",
+      "classification": "error"
     },
     {
-      "type": "revenue_mismatch",
-      "rows_affected": 1678,
-      "unit_errors_x10": 36110,
-      "unit_errors_x100": 35685,
-      "unit_errors_x1000": 35685,
-      "action": "Fixed unit scaling errors; recomputed Revenue = Units * Price"
+      "file": "train.csv",
+      "issue_type": "duplicate_record_id",
+      "rows_affected": 3682,
+      "action": "Kept the row with the latest Load_Timestamp (business rule 2)",
+      "classification": "error",
+      "duplicates_with_changed_units": 732
     },
     {
-      "type": "sku_validation",
-      "train_unique_skus": 2659,
-      "master_skus": 601,
-      "in_train_not_master": 2061,
-      "in_master_not_train": 3,
-      "sample_not_in_master": [
-        " BSS-001",
-        " BSS-002",
-        " BSS-003",
-        " BSS-004",
-        " BSS-005",
-        " BSS-006",
-        " BSS-007",
-        " BSS-008",
-        " BSS-009",
-        " BSS-011"
-      ],
-      "action": "Flagged SKUs not in master for investigation"
+      "file": "train.csv",
+      "issue_type": "region_missing",
+      "rows_affected": 737,
+      "action": "Inferred from SKU x customer x channel footprint where exactly one region had no row that month; rest dropped",
+      "classification": "error",
+      "inferred": 737,
+      "dropped": 0
     },
     {
-      "type": "invalid_region_removed",
-      "rows_removed": 942,
-      "action": "Removed rows where Region could not be mapped to a clean value"
+      "file": "train.csv",
+      "issue_type": "price_in_cents",
+      "rows_affected": 613,
+      "action": "Unit price 100x list price (cents) -> replaced with SKU-year list price",
+      "classification": "error"
     },
     {
-      "type": "aggregation",
-      "rows_before": 243624,
-      "rows_after": 243624,
-      "action": "Aggregated to one row per Date-SKU-Region (summed Units_Sold and Revenue)"
+      "file": "train.csv",
+      "issue_type": "price_x10",
+      "rows_affected": 385,
+      "action": "Unit price 10x list price (decimal shift) -> replaced with list price",
+      "classification": "error"
     },
     {
-      "type": "unconstrained_demand",
-      "rows_corrected": 4896,
-      "action": "Used Requested_Units from stockout data as true demand where available"
+      "file": "train.csv",
+      "issue_type": "price_off_list",
+      "rows_affected": 1659,
+      "action": "Price not explained by list/surcharge -> replaced with list price",
+      "classification": "error"
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "zero_price_on_no_order",
+      "rows_affected": 35390,
+      "action": "Price 0 on 0-unit rows (no order) - not an error; list price filled",
+      "classification": "info"
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "negative_units",
+      "rows_affected": 491,
+      "action": "Sign error (revenue also negative); took absolute value",
+      "classification": "error"
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "units_missing_recovered",
+      "rows_affected": 3164,
+      "action": "Units_Sold blank or \"-\" -> recovered as Revenue / Unit_Price",
+      "classification": "error",
+      "dash_values": 217
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "units_unrecoverable",
+      "rows_affected": 380,
+      "action": "Units and revenue both missing -> row treated as missing (not zero)",
+      "classification": "error"
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "units_revenue_mismatch",
+      "rows_affected": 1610,
+      "action": "Units x price != revenue: kept whichever of {Units, Revenue/Price} matches the SKU-region level",
+      "classification": "error",
+      "units_replaced": 435,
+      "revenue_recomputed": 1175
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "units_x100_uom",
+      "rows_affected": 0,
+      "action": "Quantity 100x the series level and a multiple of 100 (pack/UoM error) -> divided by 100",
+      "classification": "error",
+      "with_thousands_separator": 0
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "units_x10_uom",
+      "rows_affected": 38,
+      "action": "Quantity 10x the series level and a multiple of 10 (pack/UoM error) -> divided by 10",
+      "classification": "error",
+      "with_thousands_separator": 1
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "duplicate_key_different_record_id",
+      "rows_affected": 0,
+      "action": "Same Date-SKU-Region under two Record_IDs: identical quantities -> keep latest load; else keep latest load",
+      "classification": "error",
+      "identical_quantity": 0
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "sale_after_eol",
+      "rows_affected": 0,
+      "action": "Master says EOL earlier than last sale - kept (transactions are evidence); flagged",
+      "classification": "master_data_conflict",
+      "skus": []
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "sale_before_launch",
+      "rows_affected": 16,
+      "action": "Sale before master Launch_Date - kept; flagged",
+      "classification": "master_data_conflict",
+      "skus": [
+        "BSS-018"
+      ]
+    },
+    {
+      "file": "macro_indicators.csv",
+      "issue_type": "duplicate_month",
+      "rows_affected": 2,
+      "action": "Two rows for the same month -> averaged",
+      "classification": "error"
+    },
+    {
+      "file": "macro_indicators.csv",
+      "issue_type": "auto_production_as_fraction",
+      "rows_affected": 12,
+      "action": "Values like -0.015 are fractions, not percent -> x100",
+      "classification": "error"
+    },
+    {
+      "file": "macro_indicators.csv",
+      "issue_type": "ISM_Manufacturing_PMI_decimal_shift",
+      "rows_affected": 1,
+      "action": "Value off by x0.1 vs neighbours -> rescaled",
+      "classification": "error",
+      "dates": [
+        "2023-05"
+      ]
+    },
+    {
+      "file": "macro_indicators.csv",
+      "issue_type": "missing_values",
+      "rows_affected": 5,
+      "action": "Linear interpolation between neighbouring months",
+      "classification": "error"
+    },
+    {
+      "file": "macro_indicators.csv",
+      "issue_type": "covid_shock_2020",
+      "rows_affected": 0,
+      "action": "PMI 41 / auto production -45% in 2020-04 are real - kept",
+      "classification": "real_event"
+    },
+    {
+      "file": "events_calendar.csv",
+      "issue_type": "mixed_date_granularity",
+      "rows_affected": 20,
+      "action": "Day-level dates kept and also mapped to Start_Month/End_Month; open-ended End_Date = permanent",
+      "classification": "error"
+    },
+    {
+      "file": "inventory_stockouts.csv",
+      "issue_type": "invalid_key",
+      "rows_affected": 0,
+      "action": "Dropped",
+      "classification": "error"
+    },
+    {
+      "file": "inventory_stockouts.csv",
+      "issue_type": "duplicate_key",
+      "rows_affected": 0,
+      "action": "Dropped exact key duplicates",
+      "classification": "error"
+    },
+    {
+      "file": "inventory_stockouts.csv",
+      "issue_type": "shipped_vs_train_mismatch",
+      "rows_affected": 47,
+      "action": "Shipped_Units disagrees with cleaned Units_Sold; train value kept, stockout row still used for demand",
+      "classification": "error"
+    },
+    {
+      "file": "inventory_stockouts.csv",
+      "issue_type": "requested_zero_with_shipments",
+      "rows_affected": 41,
+      "action": "Requested_Units rebuilt from Shipped / Fill_Rate - Carried_In",
+      "classification": "error"
+    },
+    {
+      "file": "inventory_stockouts.csv",
+      "issue_type": "empty_stockout_row",
+      "rows_affected": 829,
+      "action": "Requested = Shipped = 0: no demand signal, ignored for demand reconstruction",
+      "classification": "error"
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "stockout_constrained_month",
+      "rows_affected": 4976,
+      "action": "Units_Sold < demand: Unconstrained_Demand = Requested_Units (rule 7)",
+      "classification": "real_event"
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "backorder_catchup_month",
+      "rows_affected": 1048,
+      "action": "Shipments inflated by last month back-orders -> removed from Unconstrained_Demand",
+      "classification": "real_event"
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "unlisted_supply_constraint",
+      "rows_affected": 484,
+      "action": "Electrical Assemblies during chip shortage, not in stockout file, shipping <80% of pre-shortage level -> demand = shipments / listed regional fill rate (capped at 1.2x pre-shortage level)",
+      "classification": "real_event"
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "missing_rows",
+      "rows_affected": 1335,
+      "action": "Months without a row inside a series life are MISSING, not zero (rule 3): left as NaN for the model; concentrated in Latin America 2023-03..05 (ERP migration, EV-033)",
+      "classification": "missing_data"
+    },
+    {
+      "file": "train.csv",
+      "issue_type": "zero_units",
+      "rows_affected": 36009,
+      "action": "Explicit 0 = no order (holiday shutdowns, order-cycle gaps) - kept as real zeros",
+      "classification": "real_event"
     }
-  ]
+  ],
+  "before_after": {
+    "train_rows_raw": 248248,
+    "train_rows_clean": 244186,
+    "regions": [
+      30,
+      6
+    ],
+    "channels": [
+      17,
+      4
+    ],
+    "customers": [
+      220,
+      12
+    ],
+    "skus": [
+      2659,
+      598
+    ],
+    "units_total": [
+      12217326.0,
+      11696360.0
+    ],
+    "unconstrained_units_total": 11783901.0,
+    "stockout_rows": 4976,
+    "units_x_price_eq_revenue_pct": [
+      97.89259341036775,
+      100.0
+    ]
+  },
+  "summary": {
+    "issue_types": 43,
+    "rows_touched": 27836
+  }
 }

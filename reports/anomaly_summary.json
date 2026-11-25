@@ -1,0 +1,72 @@
+[
+  {
+    "Classification": "Master data conflict",
+    "Anomaly_Type": "Master data conflict",
+    "rows": 16
+  },
+  {
+    "Classification": "Missing data",
+    "Anomaly_Type": "Missing row",
+    "rows": 1335
+  },
+  {
+    "Classification": "Real event",
+    "Anomaly_Type": "Back-order catch-up",
+    "rows": 1048
+  },
+  {
+    "Classification": "Real event",
+    "Anomaly_Type": "Customer event (strike)",
+    "rows": 100
+  },
+  {
+    "Classification": "Real event",
+    "Anomaly_Type": "Customer switch",
+    "rows": 23
+  },
+  {
+    "Classification": "Real event",
+    "Anomaly_Type": "Disruption (COVID-19 lockdown)",
+    "rows": 3698
+  },
+  {
+    "Classification": "Real event",
+    "Anomaly_Type": "Logistics delay (Red Sea)",
+    "rows": 3
+  },
+  {
+    "Classification": "Real event",
+    "Anomaly_Type": "One-off order spike",
+    "rows": 338
+  },
+  {
+    "Classification": "Real event",
+    "Anomaly_Type": "Ordering-cycle change",
+    "rows": 9
+  },
+  {
+    "Classification": "Real event",
+    "Anomaly_Type": "Pre-buy / payback (9% price rise)",
+    "rows": 4
+  },
+  {
+    "Classification": "Real event",
+    "Anomaly_Type": "Stockout (listed)",
+    "rows": 4976
+  },
+  {
+    "Classification": "Real event",
+    "Anomaly_Type": "Stockout (not in stockout file)",
+    "rows": 484
+  },
+  {
+    "Classification": "Real event",
+    "Anomaly_Type": "Structural break (capacity step-up)",
+    "rows": 66
+  },
+  {
+    "Classification": "Unexplained",
+    "Anomaly_Type": "Statistical outlier (unexplained)",
+    "rows": 659
+  }
+]
